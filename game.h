@@ -39,6 +39,7 @@
 #define RT_TREASURE 2
 #define MAX_TRAPS 20
 #define MAX_ITEMS 100
+#define MAX_WEAPONS 30
 #define PLAYER_HP 100
 #define HP_MSG_Y LINES - 1
 #define HP_MSG_X 10
@@ -115,7 +116,7 @@ typedef struct Weapon
 {
     int type;
     Point pos;
-
+    bool is_taken;
 } Weapon;
 
 typedef struct Player
@@ -127,6 +128,8 @@ typedef struct Player
     int gold_count, food_count, spell_count, ancient_key_count;
     Item items[MAX_ITEMS];
     int item_count;
+    Weapon weapons[MAX_WEAPONS];
+    int weapon_count;
     int curr_area;
 } Player;
 
@@ -146,6 +149,8 @@ typedef struct Room
     Point staircase;
     Item items[MAX_ITEMS];
     int item_count;
+    Weapon weapons[MAX_WEAPONS];
+    int weapon_count;
     bool is_reveald;
     char password[PASSWORD_SIZE];
 } Room;
@@ -177,6 +182,7 @@ Point *check_secret_doors(Room *room, bool s_pressed);
 bool check_button(Room *room);
 bool check_password_doors(Room *room);
 bool check_items(Room *room);
+bool check_weapons(Room *room);
 bool check_staircase(Room *room);
 bool use_ancient_key();
 bool unlock_door(Room *room, int index);

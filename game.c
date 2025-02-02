@@ -41,8 +41,6 @@ void start_game()
     setlocale(LC_ALL, "");
     curs_set(0);
     create_map(&map);
-    // temp_room(&map);
-
     // curr_room = &map.rooms[player.curr_area];
     clear();
     map.rooms[player.curr_area].is_reveald = true;
@@ -67,7 +65,7 @@ void create_map(Map *map)
     srand(time(NULL));
     int made_rooms = 0;
     map->room_count = rand() % 3 + 7;
-    player.curr_area = rand() % map->room_count;
+    player.curr_area = rand() % (map->room_count - 1) + 1;
 
     // make rooms
     while (made_rooms < map->room_count)
@@ -315,6 +313,40 @@ void itemize_regular_room(Room *room)
         room->traps[room->trap_count++].is_triggered = false;
         redraw_screen(&map);
     }
+
+    // weapon
+    int weapon_count = rand() % 2;
+    for (int i = 0; i < weapon_count; i++)
+    {
+        Item *point = random_point(room);
+        room->weapons[room->weapon_count].pos.x = point->pos.x;
+        room->weapons[room->weapon_count].pos.y = point->pos.y;
+        free(point);
+        int type_probabality = rand() % 5;
+        if (type_probabality == 0)
+        {
+            room->weapons[room->weapon_count].type = WT_MACE;
+        }
+        else if (type_probabality == 1)
+        {
+            room->weapons[room->weapon_count].type = WT_DAGGER;
+        }
+        else if (type_probabality == 2)
+        {
+            room->weapons[room->weapon_count].type = WT_MAGIC_WAND;
+        }
+        else if (type_probabality == 3)
+        {
+            room->weapons[room->weapon_count].type = WT_NORMAL_ARROW;
+        }
+        else if (type_probabality == 4)
+        {
+            room->weapons[room->weapon_count].type = WT_SWORD;
+        }
+        room->weapons[room->weapon_count].is_taken = false;
+        room->weapon_count++;
+        redraw_screen(&map);
+    }
 }
 
 void itemize_enchant_room(Room *room)
@@ -352,6 +384,7 @@ Room *generate_room(int area)
     room->area = area;
     room->item_count = 0;
     room->trap_count = 0;
+    room->weapon_count = 0;
 
     // room area
     switch (area)
@@ -641,7 +674,7 @@ void draw_room(Room *room, int mode)
     mvaddch(room->staircase.y, room->staircase.x, G_STAIRCASE);
 
     // draw traps
-    for (int i = 0; i < MAX_TRAPS; i++)
+    for (int i = 0; i < room->trap_count; i++)
     {
         if (room->traps[i].is_triggered)
         {
@@ -649,8 +682,34 @@ void draw_room(Room *room, int mode)
         }
     }
 
+    // draw weapons
+    for (int i = 0; i < room->weapon_count; i++)
+    {
+        if (!room->weapons[i].is_taken)
+        {
+            switch (room->weapons[i].type)
+            {
+            case WT_MACE:
+                mvaddch(room->weapons[i].pos.y, room->weapons[i].pos.x, W_MACE);
+                break;
+            case WT_DAGGER:
+                mvaddch(room->weapons[i].pos.y, room->weapons[i].pos.x, W_DAGGER);
+                break;
+            case WT_MAGIC_WAND:
+                mvaddch(room->weapons[i].pos.y, room->weapons[i].pos.x, W_MAGIC_WAND);
+                break;
+            case WT_NORMAL_ARROW:
+                mvaddch(room->weapons[i].pos.y, room->weapons[i].pos.x, W_NORMAL_ARROW);
+                break;
+            case WT_SWORD:
+                mvaddch(room->weapons[i].pos.y, room->weapons[i].pos.x, W_SWORD);
+                break;
+            }
+        }
+    }
+
     // draw items
-    for (int i = 0; i < MAX_ITEMS; i++)
+    for (int i = 0; i < room->item_count; i++)
     {
         switch (room->items[i].type)
         {
@@ -1085,6 +1144,46 @@ bool check_items(Room *room)
     }
 }
 
+bool check_weapons(Room *room)
+{
+    int *count = &player.weapon_count;
+    for (int i = 0; i < MAX_WEAPONS; i++)
+    {
+        if (player.pos.y == room->weapons[i].pos.y && player.pos.x == room->weapons[i].pos.x && !room->weapons[i].is_taken)
+        {
+            Weapon *weapon = &room->weapons[i];
+            switch (weapon->type)
+            {
+            case WT_MACE:
+                print_umsg("You have successfully found a Mace. Ready your arms for battle!");
+                player.weapons[*count++] = *weapon;
+                weapon->is_taken = true;
+                break;
+            case WT_DAGGER:
+                print_umsg("You have successfully found a Dagger. Ready your arms for battle!");
+                player.weapons[*count++] = *weapon;
+                weapon->is_taken = true;
+                break;
+            case WT_MAGIC_WAND:
+                print_umsg("You have successfully found a Magic Wand. Ready your arms for battle!");
+                player.weapons[*count++] = *weapon;
+                weapon->is_taken = true;
+                break;
+            case WT_NORMAL_ARROW:
+                print_umsg("You have successfully found a Normal Arrow. Ready your arms for battle!");
+                player.weapons[*count++] = *weapon;
+                weapon->is_taken = true;
+                break;
+            case WT_SWORD:
+                print_umsg("You have successfully found a Sword. Ready your arms for battle!");
+                player.weapons[*count++] = *weapon;
+                weapon->is_taken = true;
+                break;
+            }
+        }
+    }
+}
+
 bool check_staircase(Room *room)
 {
     int x = player.pos.x, y = player.pos.y;
@@ -1434,6 +1533,7 @@ void move_player()
             {
                 check_button(&map.rooms[player.curr_area]);
                 check_items(&map.rooms[player.curr_area]);
+                check_weapons(&map.rooms[player.curr_area]);
             }
             redraw_screen(&map);
             usleep(15000);
@@ -1525,7 +1625,7 @@ void redraw_screen(Map *map)
         {
             if ((i >= 0 && i < map->room_count) && (i == player.curr_area || i - 1 == player.curr_area || i + 1 == player.curr_area))
             {
-            draw_room(&map->rooms[i], 1);
+                draw_room(&map->rooms[i], 1);
             }
         }
         if (map->corridors[i].is_reveald)
