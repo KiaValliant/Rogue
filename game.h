@@ -29,7 +29,7 @@
 #define AREA_7_Y 2 * OT_LINES + 2
 #define AREA_8_X 2 * OT_COLS
 #define AREA_8_Y 2 * OT_LINES + 2
-#define MAX_MAPS_LEN 200
+#define MAX_MAPS_LEN 150
 #define MAX_QUEUE_SIZE (MAX_MAPS_LEN * MAX_MAPS_LEN)
 #define MAX_CORRS 30
 #define HOR 0
@@ -41,6 +41,15 @@
 #define MAX_ITEMS 100
 #define MAX_WEAPONS 30
 #define PLAYER_HP 100
+#define PLAYER_FEED 100
+#define LIST_Y LINES / 2 - 10
+#define LIST_X COLS / 2 - 20
+#define LIST_HEIGHT 20
+#define LIST_WIDTH 40
+#define LIST_MSG_Y 4
+#define LIST_MSG_X 17
+#define LIST_FI_Y 6
+#define LIST_FI_X 3
 #define HP_MSG_Y LINES - 1
 #define HP_MSG_X 10
 #define PASSWORD_SIZE 5
@@ -124,7 +133,7 @@ typedef struct Player
     Point pos;
     int dir;
     int HP;
-    int hunger;
+    int feed;
     int gold_count, food_count, spell_count, ancient_key_count;
     Item items[MAX_ITEMS];
     int item_count;
@@ -197,6 +206,8 @@ bool room_overlap(Room a, Room b);
 bool door_overlap(Point a, Point b);
 void M_mode_draw();
 void move_player();
+WINDOW *list_window(const char *);
+void food_list();
 void temp_room(Map *map);
 void print_umsg(const char *format, ...);
 void draw_player();

@@ -267,7 +267,7 @@ void itemize_regular_room(Room *room)
     }
 
     // food
-    int food_count = rand() % 2;
+    int food_count = rand() % 3;
     for (int i = 0; i < food_count; i++)
     {
         Item *item = random_point(room);
@@ -780,6 +780,7 @@ void spawn_player(Room room)
 {
     init_items();
     player.HP = PLAYER_HP;
+    player.feed = PLAYER_FEED;
     int x = room.tlc.x, y = room.tlc.y, length = room.length;
     player.pos.x = x + length / 2;
     player.pos.y = y + length / 2;
@@ -1090,7 +1091,6 @@ Point *check_secret_doors(Room *room, bool s_pressed)
 
 bool check_items(Room *room)
 {
-    int *count = &player.item_count;
     for (int i = 0; i < MAX_ITEMS; i++)
     {
         if (player.pos.y == room->items[i].pos.y && player.pos.x == room->items[i].pos.x && !room->items[i].is_taken)
@@ -1100,7 +1100,7 @@ bool check_items(Room *room)
             {
             case IT_GOLD:
                 print_umsg("Jackpot! %d shiny gold coins are now yours!", item->amount);
-                player.items[*count++] = *item;
+                player.items[player.item_count++] = *item;
                 player.gold_count += item->amount;
                 item->is_taken = true;
                 break;
@@ -1112,30 +1112,30 @@ bool check_items(Room *room)
                 }
                 print_umsg("Yum! You found a delicious meal! Now you have %d foods!", ++player.food_count);
                 // player.HP += 10;
-                player.items[*count++] = *item;
+                player.items[player.item_count++] = *item;
                 item->is_taken = true;
                 break;
             case IT_HEALTH_SPELL:
                 print_umsg("Health Spell found! You feel renewed.");
-                player.items[*count++] = *item;
+                player.items[player.item_count++] = *item;
                 player.spell_count++;
                 item->is_taken = true;
                 break;
             case IT_SPEED_SPELL:
                 print_umsg("Speed Spell found! You're faster now.");
-                player.items[*count++] = *item;
+                player.items[player.item_count++] = *item;
                 player.spell_count++;
                 item->is_taken = true;
                 break;
             case IT_DAMAGE_SPELL:
                 print_umsg("Damage Spell found! Increased attack power.");
-                player.items[*count++] = *item;
+                player.items[player.item_count++] = *item;
                 player.spell_count++;
                 item->is_taken = true;
                 break;
             case IT_ANCIENT_KEY:
                 print_umsg("You found an Ancient Key! A mysterious energy surrounds it... Maybe it can unlock a password door!");
-                player.items[*count++] = *item;
+                player.items[player.item_count++] = *item;
                 player.ancient_key_count++;
                 item->is_taken = true;
                 break;
@@ -1238,7 +1238,7 @@ bool use_ancient_key()
 bool unlock_door(Room *room, int index)
 {
     WINDOW *pwin = newwin(10, 50, LINES / 2 - 5, COLS / 2 - 25);
-    keypad(pwin, TRUE);
+    // keypad(pwin, TRUE);
     box(pwin, 0, 0);
     char input_password[PASSWORD_SIZE];
     attron(A_ITALIC);
@@ -1431,7 +1431,7 @@ void M_mode_draw()
 
 void move_player()
 {
-    bool f_pressed = false, g_pressed = false, M_pressed = false, s_pressed = false;
+    bool f_pressed = false, g_pressed = false, M_pressed = false, s_pressed = false, E_pressed = false;
     static bool M_mode = false;
     nodelay(stdscr, TRUE);
     timeout(100);
@@ -1463,15 +1463,23 @@ void move_player()
         {
             s_pressed = true;
         }
+        if (ch == 'E')
+        {
+            E_pressed = true;
+        }
     }
     // timeout(100);
-    if (!f_pressed && !g_pressed && !M_pressed || s_pressed)
+    if (!f_pressed && !g_pressed && !M_pressed && !s_pressed && !E_pressed || s_pressed)
     {
         player.dir = ch;
     }
     else if (M_pressed)
     {
         M_mode_draw();
+    }
+    else if (E_pressed)
+    {
+        food_list();
     }
     else
     {
@@ -1489,6 +1497,7 @@ void move_player()
         {
             return;
         }
+
         if (check_collision())
             return;
         do
@@ -1541,6 +1550,54 @@ void move_player()
     }
 }
 
+WINDOW *list_window(const char *title)
+{
+    int size = strlen(title);
+    WINDOW *lwin = newwin(LIST_HEIGHT, LIST_WIDTH, LIST_Y, LIST_X);
+    box(lwin, 0, 0);
+    mvwprintw(lwin, LIST_MSG_Y, LIST_WIDTH / 2 - size / 2, title);
+    wrefresh(lwin);
+    return lwin;
+}
+
+void food_list()
+{
+    WINDOW *lwin = list_window("food list");
+    int simple_food_count = 0, use_index = -1;
+    for (int i = 0; i < player.item_count; i++)
+    {
+        if (player.items[i].type == IT_SIMPLE_FOOD && !player.items[i].is_used)
+        {
+            use_index = i;
+            simple_food_count++;
+        }
+    }
+    mvwprintw(lwin, LIST_FI_Y, LIST_FI_X, "Simple Food (%d)", simple_food_count);
+    wrefresh(lwin);
+    timeout(-1);
+    int ch = wgetch(lwin);
+    if (ch != ERR)
+    {
+        if (ch == '1')
+        {
+            if (player.food_count != 0)
+                player.food_count--;
+            if (use_index != -1)
+                player.items[use_index].is_used = true;
+            player.feed += 10;
+            timeout(0);
+            delwin(lwin);
+            return;
+        }
+        else if (ch == 27)
+        {
+            timeout(0);
+            delwin(lwin);
+            return;
+        }
+    }
+}
+
 int block_index(Corridor corridor)
 {
     int x = player.pos.x, y = player.pos.y;
@@ -1559,7 +1616,7 @@ void reveal_blocks(Corridor *corridor, int index)
 {
     if (index >= 0)
     {
-        for (int j = 0; j < 2; j++)
+        for (int j = 0; j < 5; j++)
         {
             if (index - j >= 0 && index - j < corridor->block_count ||
                 index + j >= 0 && index + j < corridor->block_count)
@@ -1677,7 +1734,7 @@ void print_umsg(const char *format, ...)
     attroff(COLOR_PAIR(BLUE));
     refresh();
     timeout(-1);
-    keypad(stdscr, TRUE);
+    // keypad(stdscr, TRUE);
     while (true)
     {
         int ch = getch();
