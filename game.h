@@ -189,7 +189,7 @@ void resume_game();
 void create_map(Map *map);
 void redraw_map(Map *map);
 void redraw_screen(Map *map);
-void connect_rooms(Point door1, Point door2, Map *map, Corridor *corridor);
+void connect_rooms(Point door1, Point door2, Map *map, int corr_index);
 void check_position();
 bool check_collision();
 bool check_traps(Room *room, bool s_pressed);

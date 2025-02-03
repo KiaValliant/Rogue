@@ -65,7 +65,7 @@ void create_map(Map *map)
     srand(time(NULL));
     int made_rooms = 0;
     map->room_count = rand() % 3 + 7;
-    player.curr_area = rand() % (map->room_count - 1) + 1;
+    player.curr_area = rand() % map->room_count;
 
     // make rooms
     while (made_rooms < map->room_count)
@@ -128,12 +128,12 @@ void create_map(Map *map)
     {
         if (i == 0)
         {
-            connect_rooms(map->rooms[i].doors[0], map->rooms[i + 1].doors[0], map, &map->corridors[i]);
+            connect_rooms(map->rooms[i].doors[0], map->rooms[i + 1].doors[0], map, i);
             redraw_map(map);
         }
         else
         {
-            connect_rooms(map->rooms[i].doors[1], map->rooms[i + 1].doors[0], map, &map->corridors[i]);
+            connect_rooms(map->rooms[i].doors[1], map->rooms[i + 1].doors[0], map, i);
             redraw_map(map);
         }
     }
@@ -485,7 +485,7 @@ bool is_valid(int x, int y, Map *map)
     return x >= 0 && x < COLS && y >= 3 && y < LINES - 3 && (ch == ' ' || ch == '+');
 }
 
-void connect_rooms(Point door1, Point door2, Map *map, Corridor *corridor)
+void connect_rooms(Point door1, Point door2, Map *map, int corr_index)
 {
     int dx[] = {0, 0, 1, -1};
     int dy[] = {-1, 1, 0, 0};
@@ -546,19 +546,19 @@ void connect_rooms(Point door1, Point door2, Map *map, Corridor *corridor)
             break;
         }
 
-        corridor->blocks[count] = p;
-        corridor->blocks[count].is_reveald = false;
+        map->corridors[corr_index].blocks[count] = p;
+        map->corridors[corr_index].blocks[count].is_reveald = false;
         count++;
         p = prev[p.y][p.x];
     }
 
     if (count < MAX_MAPS_LEN * MAX_MAPS_LEN)
     {
-        corridor->blocks[count++] = door1;
+        map->corridors[corr_index].blocks[count++] = door1;
     }
 
-    corridor->block_count = count;
-    corridor->is_reveald = false;
+    map->corridors[corr_index].block_count = count;
+    map->corridors[corr_index].is_reveald = false;
 }
 
 // void temp_room(Map *map)
@@ -1454,7 +1454,7 @@ void M_mode_draw()
 
 void move_player()
 {
-    bool pressed[128] = {false}; 
+    bool pressed[128] = {false};
     static bool M_mode = false;
     nodelay(stdscr, TRUE);
     timeout(100);
@@ -1858,7 +1858,7 @@ void reveal_blocks(Corridor *corridor, int index)
 void check_position()
 {
     int x = player.pos.x, y = player.pos.y;
-    for (int i = 0; i < map.room_count - 1; i++)
+    for (int i = 0; i < MAX_CORRS; i++)
     {
         int index = block_index(map.corridors[i]);
         // debug_window(0, 0, "1", 1, index);
@@ -1903,7 +1903,7 @@ void redraw_screen(Map *map)
 {
     clear();
     int count = map->room_count;
-    for (int i = 0; i < count; i++)
+    for (int i = 0; i < MAX_CORRS; i++)
     {
         if (map->rooms[i].is_reveald)
         {
