@@ -51,9 +51,11 @@
 #define LIST_FI_Y 6
 #define LIST_FI_X 3
 #define HP_MSG_Y LINES - 1
-#define HP_MSG_X 10
+#define HP_MSG_X 3
 #define PASSWORD_SIZE 5
 #define G_HP_UNIT L"❤️"
+#define G_FEED_UNIT L"🍗"
+#define G_GOLD_UNIT L"🪙"
 #define G_PLAYER 'P' | COLOR_PAIR(ORANGE)
 // #define G_PLAYER L"⚔"
 #define G_DOT '.' | COLOR_PAIR(WHITE)
@@ -71,7 +73,8 @@
 #define DT_FOUND_S 2
 #define DT_LOCKED_P 3
 #define DT_OPENED_P 4
-#define I_GOLD '*' | COLOR_PAIR(GOLD)
+#define I_GOLD 'G' | COLOR_PAIR(GOLD)
+#define I_BGOLD 'G' | COLOR_PAIR(GRAY)
 #define I_SIMPLE_FOOD 'f' | COLOR_PAIR(BLUE) 
 #define I_HEALTH_SPELL 's' | COLOR_PAIR(BLUE)
 #define I_SPEED_SPELL 's' | COLOR_PAIR(MAGENTA)
@@ -83,11 +86,12 @@
 #define IT_SPEED_SPELL 3
 #define IT_DAMAGE_SPELL 4
 #define IT_ANCIENT_KEY 5
+#define IT_BGOLD 6
 #define W_MACE '*' | COLOR_PAIR(GRAY)
 #define W_DAGGER '/' | COLOR_PAIR(GRAY)
 #define W_MAGIC_WAND '!' | COLOR_PAIR(CYAN)
 #define W_NORMAL_ARROW '>' | COLOR_PAIR(GRAY)
-#define W_SWORD '|' | COLOR_PAIR(GRAY)
+#define W_SWORD '!' | COLOR_PAIR(GRAY)
 #define WT_MACE 0 // WT: weapon type
 #define WT_DAGGER 1
 #define WT_MAGIC_WAND 2
@@ -126,6 +130,7 @@ typedef struct Weapon
     int type;
     Point pos;
     bool is_taken;
+    bool is_used;
 } Weapon;
 
 typedef struct Player
@@ -139,6 +144,7 @@ typedef struct Player
     int item_count;
     Weapon weapons[MAX_WEAPONS];
     int weapon_count;
+    Weapon active_weapon;
     int curr_area;
 } Player;
 
@@ -208,6 +214,9 @@ void M_mode_draw();
 void move_player();
 WINDOW *list_window(const char *);
 void food_list();
+void spell_list();
+void weapon_list();
+void use_spells(int spell_type);
 void temp_room(Map *map);
 void print_umsg(const char *format, ...);
 void draw_player();

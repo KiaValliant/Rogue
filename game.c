@@ -254,12 +254,21 @@ void itemize_regular_room(Room *room)
     redraw_screen(&map);
 
     // gold
-    int gold_count = rand() % 2;
+    int gold_count = rand() % 3;
     for (int i = 0; i < gold_count; i++)
     {
         Item *item = random_point(room);
-        item->type = IT_GOLD;
-        item->amount = rand() % 11 + 10;
+        int bgold_probabality = rand() % 10;
+        if (bgold_probabality == 0)
+        {
+            item->type = IT_BGOLD;
+            item->amount = rand() % 11 + 30;
+        }
+        else
+        {
+            item->type = IT_GOLD;
+            item->amount = rand() % 11 + 10;
+        }
         item->is_taken = false;
         room->items[room->item_count++] = *item;
         free(item);
@@ -273,6 +282,7 @@ void itemize_regular_room(Room *room)
         Item *item = random_point(room);
         item->type = IT_SIMPLE_FOOD;
         item->is_taken = false;
+        item->is_used = false;
         room->items[room->item_count++] = *item;
         free(item);
         redraw_screen(&map);
@@ -297,6 +307,7 @@ void itemize_regular_room(Room *room)
             item->type = IT_DAMAGE_SPELL;
         }
         item->is_taken = false;
+        item->is_used = false;
         room->items[room->item_count++] = *item;
         free(item);
         redraw_screen(&map);
@@ -343,6 +354,7 @@ void itemize_regular_room(Room *room)
         {
             room->weapons[room->weapon_count].type = WT_SWORD;
         }
+        room->weapons[room->weapon_count].is_used = false;
         room->weapons[room->weapon_count].is_taken = false;
         room->weapon_count++;
         redraw_screen(&map);
@@ -352,7 +364,7 @@ void itemize_regular_room(Room *room)
 void itemize_enchant_room(Room *room)
 {
     //  spell
-    int spell_count = rand() % 4 + 3;
+    int spell_count = rand() % 3 + 2;
 
     for (int i = 0; i < spell_count; i++)
     {
@@ -432,8 +444,8 @@ Room *generate_room(int area)
     room->is_reveald = false;
 
     // room theme
-    int theme_probabality = rand() % 2;
-    if (player.curr_area != area && theme_probabality == 0)
+    int theme_probabality = rand() % 10;
+    if (player.curr_area != area && (theme_probabality == 0 || theme_probabality == 1 || theme_probabality == 2))
     {
         room->theme = RT_ENCHANT;
         return room;
@@ -670,9 +682,6 @@ void draw_room(Room *room, int mode)
     // draw window
     mvaddch(room->window.y, room->window.x, G_WINDOW);
 
-    // draw staircase
-    mvaddch(room->staircase.y, room->staircase.x, G_STAIRCASE);
-
     // draw traps
     for (int i = 0; i < room->trap_count; i++)
     {
@@ -681,6 +690,9 @@ void draw_room(Room *room, int mode)
             mvaddch(room->traps[i].y, room->traps[i].x, G_TRAP);
         }
     }
+
+    // draw staircase
+    mvaddch(room->staircase.y, room->staircase.x, G_STAIRCASE);
 
     // draw weapons
     for (int i = 0; i < room->weapon_count; i++)
@@ -717,6 +729,12 @@ void draw_room(Room *room, int mode)
             if (!room->items[i].is_taken)
             {
                 mvaddch(room->items[i].pos.y, room->items[i].pos.x, I_GOLD);
+            }
+            break;
+        case IT_BGOLD:
+            if (!room->items[i].is_taken)
+            {
+                mvaddch(room->items[i].pos.y, room->items[i].pos.x, I_BGOLD);
             }
             break;
         case IT_SIMPLE_FOOD:
@@ -1104,6 +1122,12 @@ bool check_items(Room *room)
                 player.gold_count += item->amount;
                 item->is_taken = true;
                 break;
+            case IT_BGOLD:
+                print_umsg("Lucky! %d shiny Black gold coins are now yours!", item->amount);
+                player.items[player.item_count++] = *item;
+                player.gold_count += item->amount;
+                item->is_taken = true;
+                break;
             case IT_SIMPLE_FOOD:
                 if (player.food_count == 5)
                 {
@@ -1146,7 +1170,6 @@ bool check_items(Room *room)
 
 bool check_weapons(Room *room)
 {
-    int *count = &player.weapon_count;
     for (int i = 0; i < MAX_WEAPONS; i++)
     {
         if (player.pos.y == room->weapons[i].pos.y && player.pos.x == room->weapons[i].pos.x && !room->weapons[i].is_taken)
@@ -1156,27 +1179,27 @@ bool check_weapons(Room *room)
             {
             case WT_MACE:
                 print_umsg("You have successfully found a Mace. Ready your arms for battle!");
-                player.weapons[*count++] = *weapon;
+                player.weapons[player.weapon_count++] = *weapon;
                 weapon->is_taken = true;
                 break;
             case WT_DAGGER:
                 print_umsg("You have successfully found a Dagger. Ready your arms for battle!");
-                player.weapons[*count++] = *weapon;
+                player.weapons[player.weapon_count++] = *weapon;
                 weapon->is_taken = true;
                 break;
             case WT_MAGIC_WAND:
                 print_umsg("You have successfully found a Magic Wand. Ready your arms for battle!");
-                player.weapons[*count++] = *weapon;
+                player.weapons[player.weapon_count++] = *weapon;
                 weapon->is_taken = true;
                 break;
             case WT_NORMAL_ARROW:
                 print_umsg("You have successfully found a Normal Arrow. Ready your arms for battle!");
-                player.weapons[*count++] = *weapon;
+                player.weapons[player.weapon_count++] = *weapon;
                 weapon->is_taken = true;
                 break;
             case WT_SWORD:
                 print_umsg("You have successfully found a Sword. Ready your arms for battle!");
-                player.weapons[*count++] = *weapon;
+                player.weapons[player.weapon_count++] = *weapon;
                 weapon->is_taken = true;
                 break;
             }
@@ -1238,7 +1261,7 @@ bool use_ancient_key()
 bool unlock_door(Room *room, int index)
 {
     WINDOW *pwin = newwin(10, 50, LINES / 2 - 5, COLS / 2 - 25);
-    // keypad(pwin, TRUE);
+    keypad(pwin, TRUE);
     box(pwin, 0, 0);
     char input_password[PASSWORD_SIZE];
     attron(A_ITALIC);
@@ -1431,55 +1454,35 @@ void M_mode_draw()
 
 void move_player()
 {
-    bool f_pressed = false, g_pressed = false, M_pressed = false, s_pressed = false, E_pressed = false;
+    bool pressed[128] = {false}; 
     static bool M_mode = false;
     nodelay(stdscr, TRUE);
     timeout(100);
     int ch = getch();
     if (ch != ERR)
     {
-        if (ch == 'f')
-        {
-            f_pressed = true;
-        }
-        if (ch == 'g')
-        {
-            g_pressed = true;
-        }
-        if (ch == 'M')
-        {
-            if (M_mode)
-            {
-                M_pressed = true;
-                M_mode = false;
-            }
-            else
-            {
-                M_pressed = true;
-                M_mode = true;
-            }
-        }
-        if (ch == 's')
-        {
-            s_pressed = true;
-        }
-        if (ch == 'E')
-        {
-            E_pressed = true;
-        }
+        pressed[ch] = true;
     }
     // timeout(100);
-    if (!f_pressed && !g_pressed && !M_pressed && !s_pressed && !E_pressed || s_pressed)
+    if (!pressed['f'] && !pressed['g'] && !pressed['M'] && !pressed['s'] && !pressed['E'] && !pressed['R'] && !pressed['i'] || pressed['s'])
     {
         player.dir = ch;
     }
-    else if (M_pressed)
+    else if (pressed['M'])
     {
         M_mode_draw();
     }
-    else if (E_pressed)
+    else if (pressed['R'])
+    {
+        spell_list();
+    }
+    else if (pressed['E'])
     {
         food_list();
+    }
+    else if (pressed['i'])
+    {
+        weapon_list();
     }
     else
     {
@@ -1493,7 +1496,7 @@ void move_player()
             redraw_screen(&map);
             return;
         }
-        if (check_secret_doors(&map.rooms[player.curr_area], s_pressed))
+        if (check_secret_doors(&map.rooms[player.curr_area], pressed['s']))
         {
             return;
         }
@@ -1536,9 +1539,9 @@ void move_player()
                 break;
             }
             redraw_screen(&map);
-            check_traps(&map.rooms[player.curr_area], s_pressed);
+            check_traps(&map.rooms[player.curr_area], pressed['s']);
             check_position();
-            if (!g_pressed)
+            if (!pressed['g'])
             {
                 check_button(&map.rooms[player.curr_area]);
                 check_items(&map.rooms[player.curr_area]);
@@ -1546,7 +1549,7 @@ void move_player()
             }
             redraw_screen(&map);
             usleep(15000);
-        } while (!check_collision() && f_pressed);
+        } while (!check_collision() && pressed['f']);
     }
 }
 
@@ -1562,40 +1565,264 @@ WINDOW *list_window(const char *title)
 
 void food_list()
 {
-    WINDOW *lwin = list_window("food list");
-    int simple_food_count = 0, use_index = -1;
-    for (int i = 0; i < player.item_count; i++)
+    WINDOW *lwin = list_window("Food List");
+    while (true)
     {
-        if (player.items[i].type == IT_SIMPLE_FOOD && !player.items[i].is_used)
+        int simple_food_count = 0, use_index = -1;
+        for (int i = 0; i < player.item_count; i++)
         {
-            use_index = i;
-            simple_food_count++;
+            if (player.items[i].type == IT_SIMPLE_FOOD && !player.items[i].is_used)
+            {
+                use_index = i;
+                simple_food_count++;
+            }
+        }
+        mvwprintw(lwin, LIST_FI_Y, LIST_FI_X, "1. Simple Food (%d)", simple_food_count);
+        wrefresh(lwin);
+        timeout(-1);
+        int ch = wgetch(lwin);
+        if (ch != ERR)
+        {
+            if (ch == '1')
+            {
+                if (player.food_count >= 0)
+                {
+                    player.food_count--;
+                }
+                if (use_index != -1)
+                {
+                    player.items[use_index].is_used = true;
+                }
+                if (player.food_count >= 0)
+                {
+                    player.feed += 5;
+                }
+            }
+            else if (ch == 27)
+            {
+                timeout(0);
+                delwin(lwin);
+                return;
+            }
         }
     }
-    mvwprintw(lwin, LIST_FI_Y, LIST_FI_X, "Simple Food (%d)", simple_food_count);
-    wrefresh(lwin);
-    timeout(-1);
-    int ch = wgetch(lwin);
-    if (ch != ERR)
+}
+
+void spell_list()
+{
+    WINDOW *lwin = list_window("Spell List");
+    while (true)
     {
-        if (ch == '1')
+        int health_spell_count = 0, speed_spell_count = 0, damage_spell_count = 0;
+        int use_index1 = -1, use_index2 = -1, use_index3 = -1;
+        for (int i = 0; i < player.item_count; i++)
         {
-            if (player.food_count != 0)
-                player.food_count--;
-            if (use_index != -1)
-                player.items[use_index].is_used = true;
-            player.feed += 10;
-            timeout(0);
-            delwin(lwin);
-            return;
+            if (player.items[i].type == IT_HEALTH_SPELL && !player.items[i].is_used)
+            {
+                use_index1 = i;
+                health_spell_count++;
+            }
+            if (player.items[i].type == IT_SPEED_SPELL && !player.items[i].is_used)
+            {
+                use_index2 = i;
+                speed_spell_count++;
+            }
+            if (player.items[i].type == IT_DAMAGE_SPELL && !player.items[i].is_used)
+            {
+                use_index3 = i;
+                damage_spell_count++;
+            }
         }
-        else if (ch == 27)
+        mvwprintw(lwin, LIST_FI_Y, LIST_FI_X, "1. Health Spell (%d)", health_spell_count);
+        mvwprintw(lwin, LIST_FI_Y + 1, LIST_FI_X, "2. Speed Spell (%d)", speed_spell_count);
+        mvwprintw(lwin, LIST_FI_Y + 2, LIST_FI_X, "3. Damage Spell (%d)", damage_spell_count);
+        wrefresh(lwin);
+        timeout(-1);
+        int ch = wgetch(lwin);
+        if (ch != ERR)
         {
-            timeout(0);
-            delwin(lwin);
-            return;
+            if (ch == '1')
+            {
+                if (player.spell_count != 0)
+                {
+                    player.spell_count--;
+                }
+                if (use_index1 != -1)
+                {
+                    player.items[use_index1].is_used = true;
+                }
+                if (player.spell_count >= 0)
+                {
+                    use_spells(IT_HEALTH_SPELL);
+                }
+            }
+            if (ch == '2')
+            {
+                if (player.spell_count != 0)
+                {
+                    player.spell_count--;
+                }
+                if (use_index2 != -1)
+                {
+                    player.items[use_index2].is_used = true;
+                }
+                if (player.spell_count >= 0)
+                {
+                    use_spells(IT_SPEED_SPELL);
+                }
+            }
+            if (ch == '3')
+            {
+                if (player.spell_count != 0)
+                {
+                    player.spell_count--;
+                }
+                if (use_index3 != -1)
+                {
+                    player.items[use_index3].is_used = true;
+                }
+                if (player.spell_count >= 0)
+                {
+                    use_spells(IT_DAMAGE_SPELL);
+                }
+            }
+            else if (ch == 27)
+            {
+                timeout(0);
+                delwin(lwin);
+                return;
+            }
         }
     }
+}
+
+void weapon_list()
+{
+    WINDOW *lwin = list_window("Weapon List");
+    while (true)
+    {
+        int count[5] = {0};
+        int use_index[5] = {-1, -1, -1, -1, -1};
+        for (int i = 0; i < player.weapon_count; i++)
+        {
+            if (player.weapons[i].type == WT_MACE && !player.weapons[i].is_used)
+            {
+                use_index[WT_MACE] = i;
+                count[WT_MACE]++;
+            }
+            else if (player.weapons[i].type == WT_DAGGER && !player.weapons[i].is_used)
+            {
+                use_index[WT_DAGGER] = i;
+                count[WT_DAGGER]++;
+            }
+            else if (player.weapons[i].type == WT_MAGIC_WAND && !player.weapons[i].is_used)
+            {
+                use_index[WT_MAGIC_WAND] = i;
+                count[WT_MAGIC_WAND]++;
+            }
+            else if (player.weapons[i].type == WT_NORMAL_ARROW && !player.weapons[i].is_used)
+            {
+                use_index[WT_NORMAL_ARROW] = i;
+                count[WT_NORMAL_ARROW]++;
+            }
+            else if (player.weapons[i].type == WT_SWORD && !player.weapons[i].is_used)
+            {
+                use_index[WT_SWORD] = i;
+                count[WT_SWORD]++;
+            }
+        }
+        mvwprintw(lwin, LIST_FI_Y, LIST_FI_X, "1. Mace (%d)", count[WT_MACE]);
+        mvwprintw(lwin, LIST_FI_Y + 1, LIST_FI_X, "2. Dagger (%d)", count[WT_DAGGER]);
+        mvwprintw(lwin, LIST_FI_Y + 2, LIST_FI_X, "3. Magic Wand (%d)", count[WT_MAGIC_WAND]);
+        mvwprintw(lwin, LIST_FI_Y + 3, LIST_FI_X, "4. Normal Arrow (%d)", count[WT_NORMAL_ARROW]);
+        mvwprintw(lwin, LIST_FI_Y + 4, LIST_FI_X, "5. Sword (%d)", count[WT_SWORD]);
+        wrefresh(lwin);
+        timeout(-1);
+        int ch = wgetch(lwin);
+        if (ch != ERR)
+        {
+            if (ch == '1')
+            {
+                if (player.weapon_count >= 0)
+                {
+                    player.weapon_count--;
+                }
+                if (use_index[WT_MACE] != -1)
+                {
+                    player.items[use_index[WT_MACE]].is_used = true;
+                }
+                if (player.weapon_count >= 0)
+                {
+                }
+            }
+            if (ch == '2')
+            {
+                if (player.weapon_count >= 0)
+                {
+                    player.weapon_count--;
+                }
+                if (use_index[WT_DAGGER] != -1)
+                {
+                    player.items[use_index[WT_DAGGER]].is_used = true;
+                }
+                if (player.weapon_count >= 0)
+                {
+                }
+            }
+            if (ch == '3')
+            {
+                if (player.weapon_count >= 0)
+                {
+                    player.weapon_count--;
+                }
+                if (use_index[WT_MAGIC_WAND] != -1)
+                {
+                    player.items[use_index[WT_MAGIC_WAND]].is_used = true;
+                }
+                if (player.weapon_count >= 0)
+                {
+                }
+            }
+            if (ch == '4')
+            {
+                if (player.weapon_count >= 0)
+                {
+                    player.weapon_count--;
+                }
+                if (use_index[WT_NORMAL_ARROW] != -1)
+                {
+                    player.items[use_index[WT_NORMAL_ARROW]].is_used = true;
+                }
+                if (player.weapon_count >= 0)
+                {
+                }
+            }
+            if (ch == '5')
+            {
+                if (player.weapon_count >= 0)
+                {
+                    player.weapon_count--;
+                }
+                if (use_index[WT_SWORD] != -1)
+                {
+                    player.items[use_index[WT_SWORD]].is_used = true;
+                }
+                if (player.weapon_count >= 0)
+                {
+                }
+            }
+            else if (ch == 27)
+            {
+                timeout(0);
+                delwin(lwin);
+                return;
+            }
+        }
+    }
+}
+
+void use_spells(int spell_type)
+{
 }
 
 int block_index(Corridor corridor)
@@ -1715,6 +1942,28 @@ void draw_player()
         addwstr(G_HP_UNIT);
     }
 
+    // draw player's feed
+    attron(COLOR_PAIR(ORANGE));
+    attron(A_ITALIC);
+    mvprintw(HP_MSG_Y, HP_MSG_X + 35, "FEED(%3d): ", player.feed);
+    attroff(A_ITALIC);
+    attroff(COLOR_PAIR(ORANGE));
+    for (int i = 0; i < player.feed; i += 10)
+    {
+        addwstr(G_FEED_UNIT);
+    }
+
+    // draw player's gold
+    attron(COLOR_PAIR(GOLD));
+    attron(A_ITALIC);
+    mvprintw(HP_MSG_Y, HP_MSG_X + 70, "GOLD(%3d): ", player.gold_count);
+    attroff(A_ITALIC);
+    attroff(COLOR_PAIR(GOLD));
+    for (int i = 0; i < player.gold_count; i += 10)
+    {
+        addwstr(G_GOLD_UNIT);
+    }
+
     refresh();
 }
 
@@ -1734,7 +1983,7 @@ void print_umsg(const char *format, ...)
     attroff(COLOR_PAIR(BLUE));
     refresh();
     timeout(-1);
-    // keypad(stdscr, TRUE);
+    keypad(stdscr, TRUE);
     while (true)
     {
         int ch = getch();

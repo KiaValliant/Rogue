@@ -11,7 +11,7 @@
 #define PASSWORD_FIELD_Y LINES / 2 + 1
 #define EMAIL_FIELD_Y LINES / 2 + 4
 #define ALL_FIELD_X COLS / 2 - 14
-#define ERROR_FIELD_Y LINES - 2
+#define ERROR_FIELD_Y LINES - 3
 #define ERROR_FIELD_X COLS / 2 - 9
 
 UserInfo user_info;
