@@ -23,7 +23,7 @@
 
 Player player;
 // Room *curr_room;
-Map map;
+// Map map;
 chtype wall[2][3] = {{
                          '_' | COLOR_PAIR(ORANGE),
                          '_' | COLOR_PAIR(CYAN),
@@ -40,6 +40,7 @@ void start_game()
     initscr();
     setlocale(LC_ALL, "");
     curs_set(0);
+    Map map;
     create_map(&map);
     // curr_room = &map.rooms[player.curr_area];
     clear();
@@ -51,7 +52,7 @@ void start_game()
     draw_player();
     while (true)
     {
-        move_player();
+        move_player(&map);
     }
     endwin();
 }
@@ -94,13 +95,13 @@ void create_map(Map *map)
         if (map->rooms[i].theme == RT_REGULAR)
         {
             redraw_map(map);
-            itemize_regular_room(&map->rooms[i]);
+            itemize_regular_room(map, &map->rooms[i]);
             redraw_map(map);
         }
         else if (map->rooms[i].theme == RT_ENCHANT)
         {
             redraw_map(map);
-            itemize_enchant_room(&map->rooms[i]);
+            itemize_enchant_room(map, &map->rooms[i]);
             redraw_map(map);
         }
     }
@@ -118,8 +119,8 @@ void create_map(Map *map)
     int corridor_count = 0;
     for (int i = 0; i < map->room_count - 1; i++)
     {
-        Point *door1 = create_door(&map->rooms[i], map->rooms[i].door_count++);
-        Point *door2 = create_door(&map->rooms[i + 1], map->rooms[i + 1].door_count++);
+        Point *door1 = create_door(map, &map->rooms[i], map->rooms[i].door_count++);
+        Point *door2 = create_door(map, &map->rooms[i + 1], map->rooms[i + 1].door_count++);
     }
     redraw_map(map);
 
@@ -146,7 +147,7 @@ void create_map(Map *map)
     free(point);
 }
 
-Point *create_door(Room *room, int index)
+Point *create_door(Map *map, Room *room, int index)
 {
     if (index >= MAX_DOORS)
         return NULL;
@@ -191,9 +192,9 @@ Point *create_door(Room *room, int index)
         area > player.curr_area && index != 0 ||
         area == player.curr_area)
     {
-        if (area >= player.curr_area && area + 1 < map.room_count && map.rooms[area + 1].theme == RT_ENCHANT && index == 1 && area != 0 ||
-            area <= player.curr_area && area - 1 >= 0 && map.rooms[area - 1].theme == RT_ENCHANT && index == 0 && area != 0 ||
-            area == 0 && index == 0 && map.rooms[area + 1].theme == RT_ENCHANT)
+        if (area >= player.curr_area && area + 1 < map->room_count && map->rooms[area + 1].theme == RT_ENCHANT && index == 1 && area != 0 ||
+            area <= player.curr_area && area - 1 >= 0 && map->rooms[area - 1].theme == RT_ENCHANT && index == 0 && area != 0 ||
+            area == 0 && index == 0 && map->rooms[area + 1].theme == RT_ENCHANT)
         {
             room->doors[index].door_type = DT_SECRET_S;
             Point *result = &room->doors[index];
@@ -249,9 +250,9 @@ Item *random_point(Room *room)
     return point;
 }
 
-void itemize_regular_room(Room *room)
+void itemize_regular_room(Map *map, Room *room)
 {
-    redraw_screen(&map);
+    redraw_screen(map);
 
     // gold
     int gold_count = rand() % 3;
@@ -272,7 +273,7 @@ void itemize_regular_room(Room *room)
         item->is_taken = false;
         room->items[room->item_count++] = *item;
         free(item);
-        redraw_screen(&map);
+        redraw_screen(map);
     }
 
     // food
@@ -285,7 +286,7 @@ void itemize_regular_room(Room *room)
         item->is_used = false;
         room->items[room->item_count++] = *item;
         free(item);
-        redraw_screen(&map);
+        redraw_screen(map);
     }
 
     //  spell
@@ -310,7 +311,7 @@ void itemize_regular_room(Room *room)
         item->is_used = false;
         room->items[room->item_count++] = *item;
         free(item);
-        redraw_screen(&map);
+        redraw_screen(map);
     }
 
     // trap
@@ -322,7 +323,7 @@ void itemize_regular_room(Room *room)
         room->traps[room->trap_count].y = point->pos.y;
         free(point);
         room->traps[room->trap_count++].is_triggered = false;
-        redraw_screen(&map);
+        redraw_screen(map);
     }
 
     // weapon
@@ -357,11 +358,11 @@ void itemize_regular_room(Room *room)
         room->weapons[room->weapon_count].is_used = false;
         room->weapons[room->weapon_count].is_taken = false;
         room->weapon_count++;
-        redraw_screen(&map);
+        redraw_screen(map);
     }
 }
 
-void itemize_enchant_room(Room *room)
+void itemize_enchant_room(Map *map, Room *room)
 {
     //  spell
     int spell_count = rand() % 3 + 2;
@@ -385,7 +386,7 @@ void itemize_enchant_room(Room *room)
         item->is_taken = false;
         room->items[room->item_count++] = *item;
         free(item);
-        redraw_screen(&map);
+        redraw_screen(map);
     }
 }
 
@@ -953,7 +954,7 @@ bool check_traps(Room *room, bool s_pressed)
     return false;
 }
 
-bool check_password_doors(Room *room)
+bool check_password_doors(Map *map, Room *room)
 {
     switch (player.dir)
     {
@@ -963,7 +964,7 @@ bool check_password_doors(Room *room)
             if (player.pos.x == room->doors[i].x && player.pos.y - 1 == room->doors[i].y && room->doors[i].door_type == DT_LOCKED_P)
             {
                 print_umsg("ACCESS DENIED! You need a password to unlock this door.");
-                unlock_door(room, i);
+                unlock_door(map, room, i);
                 return true;
             }
         }
@@ -975,7 +976,7 @@ bool check_password_doors(Room *room)
             if (player.pos.x + 1 == room->doors[i].x && player.pos.y == room->doors[i].y && room->doors[i].door_type == DT_LOCKED_P)
             {
                 print_umsg("ACCESS DENIED! You need a password to unlock this door.");
-                unlock_door(room, i);
+                unlock_door(map, room, i);
                 return true;
             }
         }
@@ -988,7 +989,7 @@ bool check_password_doors(Room *room)
             if (player.pos.x == room->doors[i].x && player.pos.y + 1 == room->doors[i].y && room->doors[i].door_type == DT_LOCKED_P)
             {
                 print_umsg("ACCESS DENIED! You need a password to unlock this door.");
-                unlock_door(room, i);
+                unlock_door(map, room, i);
                 return true;
             }
         }
@@ -1000,7 +1001,7 @@ bool check_password_doors(Room *room)
             if (player.pos.x - 1 == room->doors[i].x && player.pos.y == room->doors[i].y && room->doors[i].door_type == DT_LOCKED_P)
             {
                 print_umsg("ACCESS DENIED! You need a password to unlock this door.");
-                unlock_door(room, i);
+                unlock_door(map, room, i);
                 return true;
             }
         }
@@ -1012,7 +1013,7 @@ bool check_password_doors(Room *room)
     }
 }
 
-bool check_button(Room *room)
+bool check_button(Map *map, Room *room)
 {
     if (player.pos.x == room->button.x && player.pos.y == room->button.y)
     {
@@ -1021,7 +1022,7 @@ bool check_button(Room *room)
             room->button.is_pressed = true;
             print_umsg("You've pressed the button! A new password is generated.");
             srand(time(NULL));
-            generate_password();
+            generate_password(&player, map);
         }
     }
 }
@@ -1258,7 +1259,7 @@ bool use_ancient_key()
     return false;
 }
 
-bool unlock_door(Room *room, int index)
+bool unlock_door(Map *map, Room *room, int index)
 {
     WINDOW *pwin = newwin(10, 50, LINES / 2 - 5, COLS / 2 - 25);
     keypad(pwin, TRUE);
@@ -1343,13 +1344,13 @@ bool unlock_door(Room *room, int index)
         }
         curs_set(0);
         count++;
-        if (!strcmp(map.rooms[player.curr_area].password, input_password) || key)
+        if (!strcmp(map->rooms[player.curr_area].password, input_password) || key)
         {
             wclear(pwin);
             delwin(pwin);
-            redraw_screen(&map);
+            redraw_screen(map);
             room->doors[index].door_type = DT_OPENED_P;
-            redraw_screen(&map);
+            redraw_screen(map);
             print_umsg("Success! The door unlocks and creaks open... What lies ahead?");
             return true;
         }
@@ -1387,7 +1388,8 @@ void reverse_password(char str1[], char str2[])
 
 void *generate_password_thread(void *arg)
 {
-    char *password = map.rooms[player.curr_area].password;
+    Game *game = (Game *)arg;
+    char *password = game->map->rooms[player.curr_area].password;
     snprintf(password, sizeof(password) + 1, "%04d", rand() % 10000);
     time_t start_time = time(NULL);
     char show_password[5] = {0};
@@ -1410,25 +1412,28 @@ void *generate_password_thread(void *arg)
     move(UMSG_Y, COLS - 20);
     clrtoeol();
     refresh();
-    map.rooms[player.curr_area].button.is_pressed = false;
+    game->map->rooms[player.curr_area].button.is_pressed = false;
     return NULL;
 }
 
-void generate_password()
+void generate_password(Player *player, Map *map)
 {
     pthread_t password_thread;
-    pthread_create(&password_thread, NULL, generate_password_thread, NULL);
+    Game *game = malloc(sizeof(Game));
+    game->map = map;
+    game->player = player;
+    pthread_create(&password_thread, NULL, generate_password_thread, (void *)game);
     pthread_detach(password_thread);
 }
 
-void M_mode_draw()
+void M_mode_draw(Map *map)
 {
     clear();
-    for (int i = 0; i < map.room_count; i++)
+    for (int i = 0; i < map->room_count; i++)
     {
         draw_player();
-        draw_room(&map.rooms[i], 1);
-        draw_corridor(map.corridors[i], 0);
+        draw_room(&map->rooms[i], 1);
+        draw_corridor(map->corridors[i], 0);
         mvprintw(0, 0, " ");
         refresh();
     }
@@ -1441,7 +1446,7 @@ void M_mode_draw()
         {
             if (chh == 'M')
             {
-                redraw_screen(&map);
+                redraw_screen(map);
                 break;
             }
         }
@@ -1452,7 +1457,7 @@ void M_mode_draw()
     }
 }
 
-void move_player()
+void move_player(Map *map)
 {
     bool pressed[128] = {false};
     static bool M_mode = false;
@@ -1470,7 +1475,7 @@ void move_player()
     }
     else if (pressed['M'])
     {
-        M_mode_draw();
+        M_mode_draw(map);
     }
     else if (pressed['R'])
     {
@@ -1491,12 +1496,12 @@ void move_player()
     flushinp();
     if (player.dir != ERR)
     {
-        if (check_password_doors(&map.rooms[player.curr_area]))
+        if (check_password_doors(map, &map->rooms[player.curr_area]))
         {
-            redraw_screen(&map);
+            redraw_screen(map);
             return;
         }
-        if (check_secret_doors(&map.rooms[player.curr_area], pressed['s']))
+        if (check_secret_doors(&map->rooms[player.curr_area], pressed['s']))
         {
             return;
         }
@@ -1538,16 +1543,16 @@ void move_player()
             default:
                 break;
             }
-            redraw_screen(&map);
-            check_traps(&map.rooms[player.curr_area], pressed['s']);
-            check_position();
+            redraw_screen(map);
+            check_traps(&map->rooms[player.curr_area], pressed['s']);
+            check_position(map);
             if (!pressed['g'])
             {
-                check_button(&map.rooms[player.curr_area]);
-                check_items(&map.rooms[player.curr_area]);
-                check_weapons(&map.rooms[player.curr_area]);
+                check_button(map, &map->rooms[player.curr_area]);
+                check_items(&map->rooms[player.curr_area]);
+                check_weapons(&map->rooms[player.curr_area]);
             }
-            redraw_screen(&map);
+            redraw_screen(map);
             usleep(15000);
         } while (!check_collision() && pressed['f']);
     }
@@ -1855,34 +1860,34 @@ void reveal_blocks(Corridor *corridor, int index)
     }
 }
 
-void check_position()
+void check_position(Map *map)
 {
     int x = player.pos.x, y = player.pos.y;
     for (int i = 0; i < MAX_CORRS; i++)
     {
-        int index = block_index(map.corridors[i]);
+        int index = block_index(map->corridors[i]);
         // debug_window(0, 0, "1", 1, index);
         if (index >= 0)
         {
             if (index == 1)
             {
-                map.rooms[i + 1].is_reveald = true;
+                map->rooms[i + 1].is_reveald = true;
             }
             else if (index == 0)
             {
                 player.curr_area = i + 1;
             }
-            else if (index == map.corridors[i].block_count - 2)
+            else if (index == map->corridors[i].block_count - 2)
             {
-                map.rooms[i].is_reveald = true;
+                map->rooms[i].is_reveald = true;
             }
-            else if (index == map.corridors[i].block_count - 1)
+            else if (index == map->corridors[i].block_count - 1)
             {
                 player.curr_area = i;
             }
 
-            map.corridors[i].is_reveald = true;
-            reveal_blocks(&map.corridors[i], index);
+            map->corridors[i].is_reveald = true;
+            reveal_blocks(&map->corridors[i], index);
             return;
         }
     }

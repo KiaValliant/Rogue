@@ -31,7 +31,7 @@
 #define AREA_8_Y 2 * OT_LINES + 2
 #define MAX_MAPS_LEN 150
 #define MAX_QUEUE_SIZE (MAX_MAPS_LEN * MAX_MAPS_LEN)
-#define MAX_CORRS 30
+#define MAX_CORRS 9
 #define HOR 0
 #define VER 1
 #define RT_REGULAR 0 // RT: room type
@@ -184,34 +184,40 @@ typedef struct Map
     Corridor corridors[MAX_CORRS];
 } Map;
 
+typedef struct Game
+{
+    Player *player;
+    Map *map;
+} Game;
+
 void start_game();
 void resume_game();
 void create_map(Map *map);
 void redraw_map(Map *map);
 void redraw_screen(Map *map);
 void connect_rooms(Point door1, Point door2, Map *map, int corr_index);
-void check_position();
+void check_position(Map *map);
 bool check_collision();
 bool check_traps(Room *room, bool s_pressed);
 Point *check_secret_doors(Room *room, bool s_pressed);
-bool check_button(Room *room);
-bool check_password_doors(Room *room);
+bool check_button(Map *map, Room *room);
+bool check_password_doors(Map *map, Room *room);
 bool check_items(Room *room);
 bool check_weapons(Room *room);
 bool check_staircase(Room *room);
 bool use_ancient_key();
-bool unlock_door(Room *room, int index);
+bool unlock_door(Map *map, Room *room, int index);
 void *generate_password_thread(void *arg);
 void generate_password();
 Room *generate_room(int area);
 Item *random_point(Room *room);
-void itemize_regular_room(Room *room);
-void itemize_enchant_room(Room *room);
-Point *create_door(Room *room, int index);
+void itemize_regular_room(Map *map, Room *room);
+void itemize_enchant_room(Map *map, Room *room);
+Point *create_door(Map *map, Room *room, int index);
 bool room_overlap(Room a, Room b);
 bool door_overlap(Point a, Point b);
-void M_mode_draw();
-void move_player();
+void M_mode_draw(Map *map);
+void move_player(Map *map);
 WINDOW *list_window(const char *);
 void food_list();
 void spell_list();
