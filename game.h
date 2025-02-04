@@ -40,7 +40,7 @@
 #define RT_TREASURE 2
 #define MAX_TRAPS 20
 #define MAX_ITEMS 100
-#define MAX_WEAPONS 30
+#define MAX_WEAPONS 100
 #define FULL_HP 100
 #define FULL_FEED 100
 #define LIST_Y LINES / 2 - 10
@@ -74,12 +74,12 @@
 #define DT_FOUND_S 2
 #define DT_LOCKED_P 3
 #define DT_OPENED_P 4
-#define I_GOLD 'G' | COLOR_PAIR(GOLD)
-#define I_BGOLD 'G' | COLOR_PAIR(GRAY)
+#define I_GOLD 'o' | COLOR_PAIR(GOLD)
+#define I_BGOLD 'o' | COLOR_PAIR(GRAY)
 #define I_SIMPLE_FOOD 'f' | COLOR_PAIR(BLUE) 
-#define I_HEALTH_SPELL 's' | COLOR_PAIR(BLUE)
-#define I_SPEED_SPELL 's' | COLOR_PAIR(MAGENTA)
-#define I_DAMAGE_SPELL 's' | COLOR_PAIR(RED)
+#define I_HEALTH_SPELL '+' | COLOR_PAIR(BLUE)
+#define I_SPEED_SPELL '+' | COLOR_PAIR(MAGENTA)
+#define I_DAMAGE_SPELL '+' | COLOR_PAIR(BROWN)
 #define I_ANCIENT_KEY 'k' | COLOR_PAIR(GOLD) 
 #define IT_GOLD 0 // IT: item type
 #define IT_SIMPLE_FOOD 1
@@ -98,6 +98,13 @@
 #define WT_MAGIC_WAND 2
 #define WT_NORMAL_ARROW 3
 #define WT_SWORD 4
+#define W_MACE_DAMAGE 5
+#define W_DAGGER_DAMAGE 12
+#define W_MAGIC_WAND_DAMAGE 15
+#define W_NORMAL_ARROW_DAMAGE 5
+#define W_SWORD_DAMAGE 10
+
+#define NO_WEAPON -1
 #define M_DEAMON 'D' | COLOR_PAIR(RED)
 #define M_FIRE_BREATHING 'F' | COLOR_PAIR(RED)
 #define M_GIANT 'G' | COLOR_PAIR(RED)
@@ -108,7 +115,20 @@
 #define MT_GIANT 2
 #define MT_SNAKE 3
 #define MT_UNDEED 4
-#define NO_WEAPON -1
+#define M_DEAMON_HP 5
+#define M_FIRE_BREATHING_HP 10
+#define M_GIANT_HP 15
+#define M_SNAKE_HP 20
+#define M_UNDEED_HP 30
+#define NO_MONSTER -1
+#define TOP_RIGHT 0
+#define TOP_LEFT 1
+#define DOWN_LEFT 2
+#define DOWN_RIGHT 3
+#define TOP 4
+#define DOWN 5
+#define RIGHT 6
+#define LEFT 7
 
 struct Point;
 struct Player;
@@ -129,6 +149,7 @@ typedef struct Point
 
 typedef struct Monster
 {
+    int type;
     Point pos;
     int dir;
     int HP;
@@ -149,9 +170,6 @@ typedef struct Weapon
 {
     int type;
     Point pos;
-    int damage;
-    int range;
-    int collect_amount;
     bool is_taken;
     bool is_used;
 } Weapon;
@@ -192,7 +210,6 @@ typedef struct Room
     bool is_reveald;
     char password[PASSWORD_SIZE];
     Monster monster;
-    bool has_monster;
 } Room;
 
 typedef struct Corridor
@@ -238,6 +255,8 @@ bool check_password_doors(Map *map, Room *room);
 bool check_items(Room *room);
 bool check_weapons(Room *room);
 bool check_staircase(Room *room);
+bool check_monster(Room *room);
+bool move_monster(Room *room);
 bool use_ancient_key();
 bool unlock_door(Map *map, Room *room, int index);
 void *generate_password_thread(void *arg);

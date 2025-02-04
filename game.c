@@ -22,8 +22,6 @@
 #endif
 
 Player player;
-// Room *curr_room;
-// Map map;
 chtype wall[2][3] = {{
                          '_' | COLOR_PAIR(ORANGE),
                          '_' | COLOR_PAIR(CYAN),
@@ -60,7 +58,6 @@ void start_game()
 void handle_input(Map *map)
 {
     bool pressed[128] = {false};
-    static bool M_mode = false;
     nodelay(stdscr, TRUE);
     timeout(100);
     int ch = getch();
@@ -68,7 +65,7 @@ void handle_input(Map *map)
     {
         pressed[ch] = true;
     }
-    if (!pressed['f'] && !pressed['g'] && !pressed['M'] && !pressed['s'] && !pressed['E'] && !pressed['R'] && !pressed['i'] && !pressed['A'] || pressed['s'])
+    if (!pressed['f'] && !pressed['g'] && !pressed[' '] && !pressed['M'] && !pressed['s'] && !pressed['E'] && !pressed['R'] && !pressed['i'] && !pressed['A'] && !pressed['w'] || pressed['s'])
     {
         player.dir = ch;
     }
@@ -88,9 +85,17 @@ void handle_input(Map *map)
     {
         food_list();
     }
+    else if (pressed['w'])
+    {
+        player.active_weapon.type = NO_WEAPON;
+    }
     else if (pressed['i'])
     {
         weapon_list();
+        return;
+    }
+    else if (pressed[' '])
+    {
     }
     else
     {
@@ -108,9 +113,10 @@ void handle_input(Map *map)
         {
             return;
         }
-
-        if (check_collision())
+        if (check_collision(player.pos, player.dir))
             return;
+        move_monster(&map->rooms[player.curr_area]);
+        redraw_screen(map);
         do
         {
             switch (player.dir)
@@ -157,7 +163,7 @@ void handle_input(Map *map)
             }
             redraw_screen(map);
             usleep(15000);
-        } while (!check_collision() && pressed['f']);
+        } while (!check_collision(player.pos, player.dir) && pressed['f']);
     }
 }
 
@@ -244,7 +250,11 @@ void create_map(Map *map)
     }
 
     // make staircase
-    int sc_area = rand() % map->room_count;
+    int sc_area;
+    do
+    {
+        sc_area = rand() % map->room_count;
+    } while (sc_area == player.curr_area);
     Item *point = random_point(&map->rooms[sc_area]);
     map->rooms[sc_area].staircase.x = point->pos.x;
     map->rooms[sc_area].staircase.y = point->pos.y;
@@ -464,6 +474,42 @@ void itemize_regular_room(Map *map, Room *room)
         room->weapon_count++;
         redraw_map(map);
     }
+
+    // monster
+    int monster_probabality = rand() % 2;
+    if (monster_probabality == 0)
+    {
+        Item *point = random_point(room);
+        room->monster.pos.x = point->pos.x;
+        room->monster.pos.y = point->pos.y;
+        free(point);
+        int type_probabality = rand() % 4;
+        if (type_probabality == 0)
+        {
+            room->monster.type = MT_DEAMON;
+            room->monster.HP = M_DEAMON_HP;
+        }
+        else if (type_probabality == 1)
+        {
+            room->monster.type = MT_FIRE_BREATHING;
+            room->monster.HP = M_FIRE_BREATHING_HP;
+        }
+        else if (type_probabality == 2)
+        {
+            room->monster.type = MT_GIANT;
+            room->monster.HP = M_GIANT_HP;
+        }
+        else if (type_probabality == 3)
+        {
+            room->monster.type = MT_SNAKE;
+            room->monster.HP = M_SNAKE_HP;
+        }
+    }
+    else
+    {
+        room->monster.type = NO_MONSTER;
+    }
+    redraw_map(map);
 }
 
 void itemize_enchant_room(Map *map, Room *room)
@@ -501,7 +547,7 @@ Room *generate_room(int area)
     room->area = area;
     room->item_count = 0;
     room->trap_count = 0;
-    room->weapon_count = 1;
+    room->weapon_count = 0;
 
     // room area
     switch (area)
@@ -891,6 +937,31 @@ void draw_room(Room *room, int mode)
         }
     }
 
+    // draw monster
+    if (room->monster.type != NO_MONSTER)
+    {
+        switch (room->monster.type)
+        {
+        case MT_DEAMON:
+            mvaddch(room->monster.pos.y, room->monster.pos.x, M_DEAMON);
+            break;
+        case MT_FIRE_BREATHING:
+            mvaddch(room->monster.pos.y, room->monster.pos.x, M_FIRE_BREATHING);
+            break;
+        case MT_GIANT:
+            mvaddch(room->monster.pos.y, room->monster.pos.x, M_GIANT);
+            break;
+        case MT_SNAKE:
+            mvaddch(room->monster.pos.y, room->monster.pos.x, M_SNAKE);
+            break;
+        case MT_UNDEED:
+            mvaddch(room->monster.pos.y, room->monster.pos.x, M_UNDEED);
+            break;
+        default:
+            break;
+        }
+    }
+
     refresh();
 }
 
@@ -912,7 +983,7 @@ void draw_corridor(Corridor corridor, int mode)
 
 void init_items()
 {
-    player.item_count = 0, player.gold_count = 0, player.food_count = 0, player.spell_count = 0, player.ancient_key_count = 0;
+    player.item_count = 0, player.gold_count = 0, player.food_count = 0, player.spell_count = 0, player.ancient_key_count = 0, player.weapon_count = 1;
 }
 
 void spawn_player(Room room)
@@ -920,20 +991,208 @@ void spawn_player(Room room)
     init_items();
     player.HP = FULL_HP;
     player.feed = FULL_FEED;
+    player.weapons[0].type = WT_MACE;
     player.active_weapon.type = WT_MACE;
     int x = room.tlc.x, y = room.tlc.y, length = room.length;
     player.pos.x = x + length / 2;
     player.pos.y = y + length / 2;
 }
 
-bool check_collision()
+bool move_monster(Room *room)
+{
+    if (room->monster.type == NO_MONSTER ||
+        room->monster.type == MT_DEAMON ||
+        room->monster.type == MT_FIRE_BREATHING)
+        return;
+    static int chase_count[MAX_ROOMS] = {0};
+    int px = player.pos.x, py = player.pos.y;
+    int mx = room->monster.pos.x, my = room->monster.pos.y;
+
+    int situation;
+    if (px > mx && py > my)
+    {
+        situation = DOWN_RIGHT;
+    }
+    else if (px < mx && py > my)
+    {
+        situation = DOWN_LEFT;
+    }
+    else if (px < mx && py < my)
+    {
+        situation = TOP_LEFT;
+    }
+    else if (px > mx && py < my)
+    {
+        situation = TOP_RIGHT;
+    }
+    else if (px == mx && py < my)
+    {
+        situation = TOP;
+    }
+    else if (px == mx && py > my)
+    {
+        situation = DOWN;
+    }
+    else if (px < mx && py == my)
+    {
+        situation = LEFT;
+    }
+    else if (px > mx && py == my)
+    {
+        situation = RIGHT;
+    }
+
+    if (room->monster.type == MT_GIANT)
+    {
+        if (chase_count[room->area]++ >= 5)
+        {
+            return;
+        }
+    }
+    switch (situation)
+    {
+    case TOP_RIGHT:
+        if (player.dir == 'j' || player.dir == 'k')
+        {
+            room->monster.dir = 'j';
+            if (check_collision(room->monster.pos, room->monster.dir))
+            {
+                return;
+            }
+            room->monster.pos.y--;
+        }
+        else if (player.dir == 'h' || player.dir == 'l')
+        {
+            room->monster.dir = 'l';
+            if (check_collision(room->monster.pos, room->monster.dir))
+            {
+                return;
+            }
+            room->monster.pos.x++;
+        }
+        break;
+    case TOP_LEFT:
+        if (player.dir == 'j' || player.dir == 'k')
+        {
+            room->monster.dir = 'j';
+            if (check_collision(room->monster.pos, room->monster.dir))
+            {
+                return;
+            }
+            room->monster.pos.y--;
+        }
+        else if (player.dir == 'h' || player.dir == 'l')
+        {
+            room->monster.dir = 'h';
+            if (check_collision(room->monster.pos, room->monster.dir))
+            {
+                return;
+            }
+            room->monster.pos.x--;
+        }
+        break;
+    case DOWN_LEFT:
+        if (player.dir == 'j' || player.dir == 'k')
+        {
+            room->monster.dir = 'k';
+            if (check_collision(room->monster.pos, room->monster.dir))
+            {
+                return;
+            }
+            room->monster.pos.y++;
+        }
+        else if (player.dir == 'h' || player.dir == 'l')
+        {
+            room->monster.dir = 'h';
+            if (check_collision(room->monster.pos, room->monster.dir))
+            {
+                return;
+            }
+            room->monster.pos.x--;
+        }
+        break;
+    case DOWN_RIGHT:
+        if (player.dir == 'j' || player.dir == 'k')
+        {
+            room->monster.dir = 'k';
+            if (check_collision(room->monster.pos, room->monster.dir))
+            {
+                return;
+            }
+            room->monster.pos.y++;
+        }
+        else if (player.dir == 'h' || player.dir == 'l')
+        {
+            room->monster.dir = 'l';
+            if (check_collision(room->monster.pos, room->monster.dir))
+            {
+                return;
+            }
+            room->monster.pos.x++;
+        }
+        break;
+    case TOP:
+        room->monster.dir = 'j';
+        if (check_collision(room->monster.pos, room->monster.dir))
+        {
+            return;
+        }
+        room->monster.pos.y--;
+        break;
+    case DOWN:
+        room->monster.dir = 'k';
+        if (check_collision(room->monster.pos, room->monster.dir))
+        {
+            return;
+        }
+        room->monster.pos.y++;
+        break;
+    case RIGHT:
+        room->monster.dir = 'l';
+        if (check_collision(room->monster.pos, room->monster.dir))
+        {
+            return;
+        }
+        room->monster.pos.x++;
+        break;
+    case LEFT:
+        room->monster.dir = 'h';
+        if (check_collision(room->monster.pos, room->monster.dir))
+        {
+            return;
+        }
+        room->monster.pos.x--;
+        break;
+    default:
+        break;
+    }
+    // }
+}
+
+bool check_monster(Room *room)
+{
+    if (room->monster.type != NO_MONSTER)
+    {
+        switch (room->monster.type)
+        {
+        case MT_DEAMON:
+
+            break;
+
+        default:
+            break;
+        }
+    }
+}
+
+bool check_collision(Point pos, int dir)
 {
     int ch;
     char cantMoveTo[] = "|_ @O";
-    switch (player.dir)
+    switch (dir)
     {
     case 'j':
-        ch = mvinch(player.pos.y - 1, player.pos.x);
+        ch = mvinch(pos.y - 1, pos.x);
         if ((ch & A_CHARTEXT) == '@' && (ch & A_COLOR) >> 8 == 3)
         {
             return false;
@@ -946,7 +1205,7 @@ bool check_collision()
         return false;
         break;
     case 'u':
-        ch = mvinch(player.pos.y - 1, player.pos.x + 1);
+        ch = mvinch(pos.y - 1, pos.x + 1);
         if ((ch & A_CHARTEXT) == '@' && (ch & A_COLOR) >> 8 == 3)
         {
             return false;
@@ -958,7 +1217,7 @@ bool check_collision()
         return false;
         break;
     case 'l':
-        ch = mvinch(player.pos.y, player.pos.x + 1);
+        ch = mvinch(pos.y, pos.x + 1);
         if ((ch & A_CHARTEXT) == '@' && (ch & A_COLOR) >> 8 == 3)
         {
             return false;
@@ -970,7 +1229,7 @@ bool check_collision()
         return false;
         break;
     case 'n':
-        ch = mvinch(player.pos.y + 1, player.pos.x + 1);
+        ch = mvinch(pos.y + 1, pos.x + 1);
         if ((ch & A_CHARTEXT) == '@' && (ch & A_COLOR) >> 8 == 3)
         {
             return false;
@@ -982,7 +1241,7 @@ bool check_collision()
         return false;
         break;
     case 'k':
-        ch = mvinch(player.pos.y + 1, player.pos.x);
+        ch = mvinch(pos.y + 1, pos.x);
         if ((ch & A_CHARTEXT) == '@' && (ch & A_COLOR) >> 8 == 3)
         {
             return false;
@@ -994,7 +1253,7 @@ bool check_collision()
         return false;
         break;
     case 'b':
-        ch = mvinch(player.pos.y + 1, player.pos.x - 1);
+        ch = mvinch(pos.y + 1, pos.x - 1);
         if ((ch & A_CHARTEXT) == '@' && (ch & A_COLOR) >> 8 == 3)
         {
             return false;
@@ -1006,7 +1265,7 @@ bool check_collision()
         return false;
         break;
     case 'h':
-        ch = mvinch(player.pos.y, player.pos.x - 1);
+        ch = mvinch(pos.y, pos.x - 1);
         if ((ch & A_CHARTEXT) == '@' && (ch & A_COLOR) >> 8 == 3)
         {
             return false;
@@ -1018,7 +1277,7 @@ bool check_collision()
         return false;
         break;
     case 'y':
-        ch = mvinch(player.pos.y - 1, player.pos.x - 1);
+        ch = mvinch(pos.y - 1, pos.x - 1);
         if ((ch & A_CHARTEXT) == '@' && (ch & A_COLOR) >> 8 == 3)
         {
             return false;
@@ -1555,7 +1814,8 @@ void M_mode_draw(Map *map)
         draw_player();
         draw_room(&map->rooms[i], 1);
         draw_corridor(map->corridors[i], 0);
-        mvprintw(0, 0, " ");
+        mvprintw(0, 0, "  ");
+        mvprintw(1, 0, "  ");
         refresh();
     }
     refresh();
@@ -1573,7 +1833,7 @@ void M_mode_draw(Map *map)
             else
             {
                 continue;
-            }   
+            }
         }
     }
 }
@@ -1756,11 +2016,33 @@ void weapon_list()
                 count[WT_SWORD]++;
             }
         }
-        mvwprintw(lwin, LIST_FI_Y, LIST_FI_X, "1. Mace (%d)", count[WT_MACE]);
-        mvwprintw(lwin, LIST_FI_Y + 1, LIST_FI_X, "2. Dagger (%d)", count[WT_DAGGER]);
-        mvwprintw(lwin, LIST_FI_Y + 2, LIST_FI_X, "3. Magic Wand (%d)", count[WT_MAGIC_WAND]);
-        mvwprintw(lwin, LIST_FI_Y + 3, LIST_FI_X, "4. Normal Arrow (%d)", count[WT_NORMAL_ARROW]);
-        mvwprintw(lwin, LIST_FI_Y + 4, LIST_FI_X, "5. Sword (%d)", count[WT_SWORD]);
+        mvwprintw(lwin, LIST_FI_Y, LIST_FI_X, "short-range weapons:");
+        mvwprintw(lwin, LIST_FI_Y + 1, LIST_FI_X, "1. Mace (%d)", count[WT_MACE]);
+        if (player.active_weapon.type == WT_MACE)
+        {
+            wprintw(lwin, " *");
+        }
+        mvwprintw(lwin, LIST_FI_Y + 2, LIST_FI_X, "2. Sword (%d)", count[WT_SWORD]);
+        if (player.active_weapon.type == WT_SWORD)
+        {
+            wprintw(lwin, " *");
+        }
+        mvwprintw(lwin, LIST_FI_Y + 4, LIST_FI_X, "long-range weapons:");
+        mvwprintw(lwin, LIST_FI_Y + 5, LIST_FI_X, "3. Dagger (%d)", count[WT_DAGGER]);
+        if (player.active_weapon.type == WT_DAGGER)
+        {
+            wprintw(lwin, " *");
+        }
+        mvwprintw(lwin, LIST_FI_Y + 6, LIST_FI_X, "4. Magic Wand (%d)", count[WT_MAGIC_WAND]);
+        if (player.active_weapon.type == WT_MAGIC_WAND)
+        {
+            wprintw(lwin, " *");
+        }
+        mvwprintw(lwin, LIST_FI_Y + 7, LIST_FI_X, "5. Normal Arrow (%d)", count[WT_NORMAL_ARROW]);
+        if (player.active_weapon.type == WT_NORMAL_ARROW)
+        {
+            wprintw(lwin, " *");
+        }
         wrefresh(lwin);
         timeout(-1);
         int ch = wgetch(lwin);
@@ -1768,72 +2050,72 @@ void weapon_list()
         {
             if (ch == '1')
             {
-                if (player.weapon_count >= 0)
+                if (player.active_weapon.type == NO_WEAPON)
                 {
-                    player.weapon_count--;
+                    player.active_weapon.type = WT_MACE;
+                    print_umsg("Active weapon changed to Mace.");
+                    return;
                 }
-                if (use_index[WT_MACE] != -1)
+                else if (player.active_weapon.type != NO_WEAPON && player.active_weapon.type != WT_MACE)
                 {
-                    player.items[use_index[WT_MACE]].is_used = true;
-                }
-                if (player.weapon_count >= 0)
-                {
+                    print_lmsg(ORANGE, "Put your weapon on backpack first.");
+                    return;
                 }
             }
             if (ch == '2')
             {
-                if (player.weapon_count >= 0)
+                if (player.active_weapon.type == NO_WEAPON)
                 {
-                    player.weapon_count--;
+                    player.active_weapon.type = WT_SWORD;
+                    print_umsg("Active weapon changed to Sword.");
+                    return;
                 }
-                if (use_index[WT_DAGGER] != -1)
+                else if (player.active_weapon.type != NO_WEAPON && player.active_weapon.type != WT_SWORD)
                 {
-                    player.items[use_index[WT_DAGGER]].is_used = true;
-                }
-                if (player.weapon_count >= 0)
-                {
+                    print_lmsg(ORANGE, "Put your weapon on backpack first.");
+                    return;
                 }
             }
             if (ch == '3')
             {
-                if (player.weapon_count >= 0)
+                if (player.active_weapon.type == NO_WEAPON)
                 {
-                    player.weapon_count--;
+                    player.active_weapon.type = WT_DAGGER;
+                    print_umsg("Active weapon changed to Dagger.");
+                    return;
                 }
-                if (use_index[WT_MAGIC_WAND] != -1)
+                else if (player.active_weapon.type != NO_WEAPON && player.active_weapon.type != WT_DAGGER)
                 {
-                    player.items[use_index[WT_MAGIC_WAND]].is_used = true;
-                }
-                if (player.weapon_count >= 0)
-                {
+                    print_lmsg(ORANGE, "Put your weapon on backpack first.");
+                    return;
                 }
             }
             if (ch == '4')
             {
-                if (player.weapon_count >= 0)
+                if (player.active_weapon.type == NO_WEAPON)
                 {
-                    player.weapon_count--;
+                    player.active_weapon.type = WT_MAGIC_WAND;
+                    print_umsg("Active weapon changed to Magic Wand.");
+                    return;
                 }
-                if (use_index[WT_NORMAL_ARROW] != -1)
+                else if (player.active_weapon.type != NO_WEAPON && player.active_weapon.type != WT_MAGIC_WAND)
                 {
-                    player.items[use_index[WT_NORMAL_ARROW]].is_used = true;
-                }
-                if (player.weapon_count >= 0)
-                {
+                    print_lmsg(ORANGE, "Put your weapon on backpack first.");
+                    return;
                 }
             }
             if (ch == '5')
             {
-                if (player.weapon_count >= 0)
+                if (player.active_weapon.type == NO_WEAPON)
                 {
-                    player.weapon_count--;
+                    player.active_weapon.type = WT_NORMAL_ARROW;
+                    print_umsg("Active weapon changed to Normal Arrow.");
+                    return;
                 }
-                if (use_index[WT_SWORD] != -1)
+                else if (player.active_weapon.type != NO_WEAPON && player.active_weapon.type != WT_NORMAL_ARROW)
                 {
-                    player.items[use_index[WT_SWORD]].is_used = true;
-                }
-                if (player.weapon_count >= 0)
-                {
+                    print_lmsg(ORANGE, "Put your weapon on backpack first.");
+                    return;
                 }
             }
             else if (ch == 27)
@@ -1841,6 +2123,10 @@ void weapon_list()
                 timeout(0);
                 delwin(lwin);
                 return;
+            }
+            else
+            {
+                continue;
             }
         }
     }
@@ -2000,12 +2286,12 @@ void print_umsg(const char *format, ...)
     call_colors();
     attron(A_ITALIC);
     attron(A_BOLD);
-    attron(COLOR_PAIR(BLUE));
+    attron(COLOR_PAIR(YELLOW));
     vw_printw(stdscr, format, args);
     va_end(args);
     attroff(A_ITALIC);
     attroff(A_BOLD);
-    attroff(COLOR_PAIR(BLUE));
+    attroff(COLOR_PAIR(YELLOW));
     refresh();
     timeout(-1);
     keypad(stdscr, TRUE);

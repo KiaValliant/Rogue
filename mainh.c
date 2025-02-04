@@ -14,6 +14,7 @@ void call_colors()
         init_color(COLOR_GRAY, 500, 500, 500);
         init_color(COLOR_ORANGE, 1000, 647, 0);
         init_color(COLOR_GOLD, 1000, 843, 0);
+        // init_color(COLOR_YELLOW, 1000, 1000, 1000);
         init_pair(1, COLOR_YELLOW, COLOR_BLACK);
         init_pair(2, COLOR_RED, COLOR_BLACK);
         init_pair(3, COLOR_GREEN, COLOR_BLACK);
