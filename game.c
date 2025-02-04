@@ -52,9 +52,113 @@ void start_game()
     draw_player();
     while (true)
     {
-        move_player(&map);
+        handle_input(&map);
     }
     endwin();
+}
+
+void handle_input(Map *map)
+{
+    bool pressed[128] = {false};
+    static bool M_mode = false;
+    nodelay(stdscr, TRUE);
+    timeout(100);
+    int ch = getch();
+    if (ch != ERR)
+    {
+        pressed[ch] = true;
+    }
+    if (!pressed['f'] && !pressed['g'] && !pressed['M'] && !pressed['s'] && !pressed['E'] && !pressed['R'] && !pressed['i'] && !pressed['A'] || pressed['s'])
+    {
+        player.dir = ch;
+    }
+    else if (pressed['A'])
+    {
+        save_game_menu(map);
+    }
+    else if (pressed['M'])
+    {
+        M_mode_draw(map);
+    }
+    else if (pressed['R'])
+    {
+        spell_list();
+    }
+    else if (pressed['E'])
+    {
+        food_list();
+    }
+    else if (pressed['i'])
+    {
+        weapon_list();
+    }
+    else
+    {
+        player.dir = getch();
+    }
+    flushinp();
+    if (player.dir != ERR)
+    {
+        if (check_password_doors(map, &map->rooms[player.curr_area]))
+        {
+            redraw_screen(map);
+            return;
+        }
+        if (check_secret_doors(&map->rooms[player.curr_area], pressed['s']))
+        {
+            return;
+        }
+
+        if (check_collision())
+            return;
+        do
+        {
+            switch (player.dir)
+            {
+            case 'j':
+                player.pos.y--;
+                break;
+            case 'u':
+                player.pos.x++;
+                player.pos.y--;
+                break;
+            case 'l':
+                player.pos.x++;
+                break;
+            case 'n':
+                player.pos.x++;
+                player.pos.y++;
+                break;
+            case 'k':
+                player.pos.y++;
+                break;
+            case 'b':
+                player.pos.x--;
+                player.pos.y++;
+                break;
+            case 'h':
+                player.pos.x--;
+                break;
+            case 'y':
+                player.pos.x--;
+                player.pos.y--;
+                break;
+            default:
+                break;
+            }
+            redraw_screen(map);
+            check_traps(&map->rooms[player.curr_area], pressed['s']);
+            check_position(map);
+            if (!pressed['g'])
+            {
+                check_button(map, &map->rooms[player.curr_area]);
+                check_items(&map->rooms[player.curr_area]);
+                check_weapons(&map->rooms[player.curr_area]);
+            }
+            redraw_screen(map);
+            usleep(15000);
+        } while (!check_collision() && pressed['f']);
+    }
 }
 
 void resume_game()
@@ -252,7 +356,7 @@ Item *random_point(Room *room)
 
 void itemize_regular_room(Map *map, Room *room)
 {
-    redraw_screen(map);
+    redraw_map(map);
 
     // gold
     int gold_count = rand() % 3;
@@ -273,7 +377,7 @@ void itemize_regular_room(Map *map, Room *room)
         item->is_taken = false;
         room->items[room->item_count++] = *item;
         free(item);
-        redraw_screen(map);
+        redraw_map(map);
     }
 
     // food
@@ -286,7 +390,7 @@ void itemize_regular_room(Map *map, Room *room)
         item->is_used = false;
         room->items[room->item_count++] = *item;
         free(item);
-        redraw_screen(map);
+        redraw_map(map);
     }
 
     //  spell
@@ -311,7 +415,7 @@ void itemize_regular_room(Map *map, Room *room)
         item->is_used = false;
         room->items[room->item_count++] = *item;
         free(item);
-        redraw_screen(map);
+        redraw_map(map);
     }
 
     // trap
@@ -323,7 +427,7 @@ void itemize_regular_room(Map *map, Room *room)
         room->traps[room->trap_count].y = point->pos.y;
         free(point);
         room->traps[room->trap_count++].is_triggered = false;
-        redraw_screen(map);
+        redraw_map(map);
     }
 
     // weapon
@@ -334,7 +438,7 @@ void itemize_regular_room(Map *map, Room *room)
         room->weapons[room->weapon_count].pos.x = point->pos.x;
         room->weapons[room->weapon_count].pos.y = point->pos.y;
         free(point);
-        int type_probabality = rand() % 5;
+        int type_probabality = rand() % 4 + 1;
         if (type_probabality == 0)
         {
             room->weapons[room->weapon_count].type = WT_MACE;
@@ -358,7 +462,7 @@ void itemize_regular_room(Map *map, Room *room)
         room->weapons[room->weapon_count].is_used = false;
         room->weapons[room->weapon_count].is_taken = false;
         room->weapon_count++;
-        redraw_screen(map);
+        redraw_map(map);
     }
 }
 
@@ -386,18 +490,18 @@ void itemize_enchant_room(Map *map, Room *room)
         item->is_taken = false;
         room->items[room->item_count++] = *item;
         free(item);
-        redraw_screen(map);
+        redraw_map(map);
     }
 }
 
 Room *generate_room(int area)
 {
     Room *room = (Room *)malloc(sizeof(Room));
-    room->length = rand() % 3 + 4;
+    room->length = rand() % 4 + 4;
     room->area = area;
     room->item_count = 0;
     room->trap_count = 0;
-    room->weapon_count = 0;
+    room->weapon_count = 1;
 
     // room area
     switch (area)
@@ -613,19 +717,35 @@ void connect_rooms(Point door1, Point door2, Map *map, int corr_index)
 void draw_room(Room *room, int mode)
 {
     call_colors();
-    int x = room->tlc.x, y = room->tlc.y, length = room->length, theme = room->theme;
+    int x = room->tlc.x, y = room->tlc.y, length = room->length;
 
     // draw walls
     for (int i = x; i < x + length + 2; i++)
     {
-        mvaddch(y, i, wall[HOR][theme]);
-        mvaddch(y + length + 1, i, wall[HOR][theme]);
+        if (room->theme == RT_REGULAR)
+        {
+            mvaddch(y, i, wall[HOR][RT_REGULAR]);
+            mvaddch(y + length + 1, i, wall[HOR][RT_REGULAR]);
+        }
+        else if (room->theme == RT_ENCHANT)
+        {
+            mvaddch(y, i, wall[HOR][RT_ENCHANT]);
+            mvaddch(y + length + 1, i, wall[HOR][RT_ENCHANT]);
+        }
     }
 
     for (int i = y + 1; i < y + length + 2; i++)
     {
-        mvaddch(i, x, wall[VER][theme]);
-        mvaddch(i, x + length + 1, wall[VER][theme]);
+        if (room->theme == RT_REGULAR)
+        {
+            mvaddch(i, x, wall[VER][RT_REGULAR]);
+            mvaddch(i, x + length + 1, wall[VER][RT_REGULAR]);
+        }
+        else if (room->theme == RT_ENCHANT)
+        {
+            mvaddch(i, x, wall[VER][RT_ENCHANT]);
+            mvaddch(i, x + length + 1, wall[VER][RT_ENCHANT]);
+        }
     }
 
     // draw dots
@@ -684,7 +804,7 @@ void draw_room(Room *room, int mode)
     mvaddch(room->window.y, room->window.x, G_WINDOW);
 
     // draw traps
-    for (int i = 0; i < room->trap_count; i++)
+    for (int i = 0; i < MAX_TRAPS; i++)
     {
         if (room->traps[i].is_triggered)
         {
@@ -798,8 +918,9 @@ void init_items()
 void spawn_player(Room room)
 {
     init_items();
-    player.HP = PLAYER_HP;
-    player.feed = PLAYER_FEED;
+    player.HP = FULL_HP;
+    player.feed = FULL_FEED;
+    player.active_weapon.type = WT_MACE;
     int x = room.tlc.x, y = room.tlc.y, length = room.length;
     player.pos.x = x + length / 2;
     player.pos.y = y + length / 2;
@@ -1388,7 +1509,7 @@ void reverse_password(char str1[], char str2[])
 
 void *generate_password_thread(void *arg)
 {
-    Game *game = (Game *)arg;
+    GamePthread *game = (GamePthread *)arg;
     char *password = game->map->rooms[player.curr_area].password;
     snprintf(password, sizeof(password) + 1, "%04d", rand() % 10000);
     time_t start_time = time(NULL);
@@ -1419,7 +1540,7 @@ void *generate_password_thread(void *arg)
 void generate_password(Player *player, Map *map)
 {
     pthread_t password_thread;
-    Game *game = malloc(sizeof(Game));
+    GamePthread *game = malloc(sizeof(GamePthread));
     game->map = map;
     game->player = player;
     pthread_create(&password_thread, NULL, generate_password_thread, (void *)game);
@@ -1429,7 +1550,7 @@ void generate_password(Player *player, Map *map)
 void M_mode_draw(Map *map)
 {
     clear();
-    for (int i = 0; i < map->room_count; i++)
+    for (int i = 0; i < MAX_ROOMS; i++)
     {
         draw_player();
         draw_room(&map->rooms[i], 1);
@@ -1447,114 +1568,13 @@ void M_mode_draw(Map *map)
             if (chh == 'M')
             {
                 redraw_screen(map);
-                break;
+                return;
             }
-        }
-        else
-        {
-            continue;
-        }
-    }
-}
-
-void move_player(Map *map)
-{
-    bool pressed[128] = {false};
-    static bool M_mode = false;
-    nodelay(stdscr, TRUE);
-    timeout(100);
-    int ch = getch();
-    if (ch != ERR)
-    {
-        pressed[ch] = true;
-    }
-    // timeout(100);
-    if (!pressed['f'] && !pressed['g'] && !pressed['M'] && !pressed['s'] && !pressed['E'] && !pressed['R'] && !pressed['i'] || pressed['s'])
-    {
-        player.dir = ch;
-    }
-    else if (pressed['M'])
-    {
-        M_mode_draw(map);
-    }
-    else if (pressed['R'])
-    {
-        spell_list();
-    }
-    else if (pressed['E'])
-    {
-        food_list();
-    }
-    else if (pressed['i'])
-    {
-        weapon_list();
-    }
-    else
-    {
-        player.dir = getch();
-    }
-    flushinp();
-    if (player.dir != ERR)
-    {
-        if (check_password_doors(map, &map->rooms[player.curr_area]))
-        {
-            redraw_screen(map);
-            return;
-        }
-        if (check_secret_doors(&map->rooms[player.curr_area], pressed['s']))
-        {
-            return;
-        }
-
-        if (check_collision())
-            return;
-        do
-        {
-            switch (player.dir)
+            else
             {
-            case 'j':
-                player.pos.y--;
-                break;
-            case 'u':
-                player.pos.x++;
-                player.pos.y--;
-                break;
-            case 'l':
-                player.pos.x++;
-                break;
-            case 'n':
-                player.pos.x++;
-                player.pos.y++;
-                break;
-            case 'k':
-                player.pos.y++;
-                break;
-            case 'b':
-                player.pos.x--;
-                player.pos.y++;
-                break;
-            case 'h':
-                player.pos.x--;
-                break;
-            case 'y':
-                player.pos.x--;
-                player.pos.y--;
-                break;
-            default:
-                break;
-            }
-            redraw_screen(map);
-            check_traps(&map->rooms[player.curr_area], pressed['s']);
-            check_position(map);
-            if (!pressed['g'])
-            {
-                check_button(map, &map->rooms[player.curr_area]);
-                check_items(&map->rooms[player.curr_area]);
-                check_weapons(&map->rooms[player.curr_area]);
-            }
-            redraw_screen(map);
-            usleep(15000);
-        } while (!check_collision() && pressed['f']);
+                continue;
+            }   
+        }
     }
 }
 
@@ -2032,4 +2052,74 @@ void debug_window(int y, int x, const char *title, int count, ...)
 
     delwin(debug_win);
     refresh();
+}
+
+bool save_game_menu(Map *map)
+{
+    WINDOW *swin = list_window("Save Game");
+    char save_title[MAX_TITLE_LEN];
+    noecho();
+    keypad(swin, TRUE);
+    mvwprintw(swin, LIST_FI_Y + 1, LIST_FI_X, "Enter your save title:");
+    wrefresh(swin);
+    int input_count = 0;
+    wmove(swin, LIST_FI_Y + 3, LIST_FI_X);
+    while (true)
+    {
+        if (input_count >= 20)
+        {
+            return true;
+        }
+        int ch = wgetch(swin);
+        if (ch != ERR)
+        {
+            if (ch == 27)
+            {
+                delwin(swin);
+                return false;
+            }
+            else if (ch == '\n')
+            {
+                break;
+            }
+            else if (ch == KEY_BACKSPACE)
+            {
+                int y1, x1;
+                getyx(swin, y1, x1);
+                curs_set(0);
+                if (x1 > LIST_FI_X)
+                {
+                    wmove(swin, y1, x1 - 1);
+                    waddch(swin, ' ');
+                    wmove(swin, y1, x1 - 1);
+                    curs_set(1);
+                    save_title[--input_count] = '\0';
+                }
+            }
+            else
+            {
+                waddch(swin, ch);
+                save_title[input_count++] = ch;
+            }
+        }
+    }
+    GameSave game;
+    game.map = *map;
+    game.player = player;
+    strcpy(game.save_title, save_title);
+    save_game(&game);
+    return true;
+}
+
+void save_game(GameSave *gameSave)
+{
+    FILE *file = fopen("gameinfo.bin", "wb");
+    if (!file)
+    {
+        perror("Failed to open file for writing");
+        return;
+    }
+
+    fwrite(gameSave, sizeof(GameSave), 1, file);
+    fclose(file);
 }
