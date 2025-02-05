@@ -1,18 +1,16 @@
-#include "game.h"
-
 #include <locale.h>
 #include <math.h>
 #include <ncurses.h>
 #include <pthread.h>
-#include <stdarg.h>
 #include <stdbool.h>
-#include <stdio.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 #include <unistd.h>
-
+#include <stdio.h>
+#include <time.h>
 #include "mainh.h"
+#include "game.h"
 #include "menu.h"
 #define DEBUG_PRINTS
 #ifdef DEBUG_PRINTS
@@ -1776,7 +1774,7 @@ bool check_button(Map *map, Room *room) {
         }
     }
 }
-
+ 
 Point *check_secret_doors(Room *room, bool s_pressed) {
     if (!s_pressed) {
         switch (player.dir) {
