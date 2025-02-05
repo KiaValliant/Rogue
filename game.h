@@ -1,4 +1,6 @@
 #include "mainh.h"
+#include <ncurses.h>
+#include <stdbool.h>
 #ifndef GAME_H
 #define GAME_H
 
@@ -40,7 +42,7 @@
 #define RT_TREASURE 2
 #define MAX_TRAPS 20
 #define MAX_ITEMS 100
-#define MAX_WEAPONS 100
+#define MAX_WEAPONS 1000
 #define FULL_HP 100
 #define FULL_FEED 100
 #define LIST_Y LINES / 2 - 10
@@ -76,11 +78,11 @@
 #define DT_OPENED_P 4
 #define I_GOLD 'o' | COLOR_PAIR(GOLD)
 #define I_BGOLD 'o' | COLOR_PAIR(GRAY)
-#define I_SIMPLE_FOOD 'f' | COLOR_PAIR(BLUE) 
+#define I_SIMPLE_FOOD 'f' | COLOR_PAIR(BLUE)
 #define I_HEALTH_SPELL '+' | COLOR_PAIR(BLUE)
 #define I_SPEED_SPELL '+' | COLOR_PAIR(MAGENTA)
 #define I_DAMAGE_SPELL '+' | COLOR_PAIR(BROWN)
-#define I_ANCIENT_KEY 'k' | COLOR_PAIR(GOLD) 
+#define I_ANCIENT_KEY 'k' | COLOR_PAIR(GOLD)
 #define IT_GOLD 0 // IT: item type
 #define IT_SIMPLE_FOOD 1
 #define IT_HEALTH_SPELL 2
@@ -103,7 +105,12 @@
 #define W_MAGIC_WAND_DAMAGE 15
 #define W_NORMAL_ARROW_DAMAGE 5
 #define W_SWORD_DAMAGE 10
-
+#define W_DAGGER_CA 10
+#define W_MAGIC_WAND_CA 8
+#define W_NORMAL_ARROW_CA 20
+#define W_DAGGER_RANGE 5
+#define W_MAGIC_WAND_RANGE 10
+#define W_NORMAL_ARROW_RANGE 5
 #define NO_WEAPON -1
 #define M_DEAMON 'D' | COLOR_PAIR(RED)
 #define M_FIRE_BREATHING 'F' | COLOR_PAIR(RED)
@@ -137,107 +144,97 @@ struct Room;
 struct Corridor;
 struct Map;
 
-typedef struct Point
-{
-    int x, y;
-    int door_type;
-    bool is_triggered, // this is for traps
-        is_pressed,    // this is for generate password button
-        is_door,       // this is for corridors
-        is_reveald;    // this is for corridor blocks
+typedef struct Point {
+  int x, y;
+  int door_type;
+  bool is_triggered, // this is for traps
+      is_pressed,    // this is for generate password button
+      is_door,       // this is for corridors
+      is_reveald;    // this is for corridor blocks
 } Point;
 
-typedef struct Monster
-{
-    int type;
-    Point pos;
-    int dir;
-    int HP;
-    int area;
+typedef struct Monster {
+  int type;
+  Point pos;
+  int dir;
+  int HP;
+  int area;
 } Monster;
 
-typedef struct Item
-{
-    int type;
-    Point pos;  // for room
-    int amount; // for player
-    bool is_taken;
-    bool is_broken; // for Ancient Key
-    bool is_used; // for Ancient Key
+typedef struct Item {
+  int type;
+  Point pos;  // for room
+  int amount; // for player
+  bool is_taken;
+  bool is_broken; // for Ancient Key
+  bool is_used;   // for Ancient Key
 } Item;
 
-typedef struct Weapon
-{
-    int type;
-    Point pos;
-    bool is_taken;
-    bool is_used;
+typedef struct Weapon {
+  int type;
+  Point pos;
+  int collect_amount;
+  bool is_taken;
+  bool is_used;
 } Weapon;
 
-typedef struct Player
-{
-    Point pos;
-    int dir;
-    int HP;
-    int feed;
-    int gold_count, food_count, spell_count, ancient_key_count;
-    Item items[MAX_ITEMS];
-    int item_count;
-    Weapon weapons[MAX_WEAPONS];
-    int weapon_count;
-    Weapon active_weapon;
-    int curr_area;
+typedef struct Player {
+  Point pos;
+  int dir;
+  int HP;
+  int feed;
+  int gold_count, food_count, spell_count, ancient_key_count;
+  Item items[MAX_ITEMS];
+  int item_count;
+  Weapon weapons[MAX_WEAPONS];
+  int weapon_count;
+  Weapon active_weapon;
+  int curr_area;
 } Player;
 
-typedef struct Room
-{
-    int theme;
-    int area;
-    Point tlc;
-    int length;
-    Point doors[MAX_DOORS];
-    int door_count;
-    Point traps[MAX_TRAPS];
-    int trap_count;
-    Point button;
-    Point pillar;
-    Point window;
-    Point staircase;
-    Item items[MAX_ITEMS];
-    int item_count;
-    Weapon weapons[MAX_WEAPONS];
-    int weapon_count;
-    bool is_reveald;
-    char password[PASSWORD_SIZE];
-    Monster monster;
+typedef struct Room {
+  int theme;
+  int area;
+  Point tlc;
+  int length;
+  Point doors[MAX_DOORS];
+  int door_count;
+  Point traps[MAX_TRAPS];
+  int trap_count;
+  Point button;
+  Point pillar;
+  Point window;
+  Point staircase;
+  Item items[MAX_ITEMS];
+  int item_count;
+  Weapon weapons[MAX_WEAPONS];
+  int weapon_count;
+  bool is_reveald;
+  char password[PASSWORD_SIZE];
+  Monster monster;
 } Room;
 
-typedef struct Corridor
-{
-    Point blocks[MAX_MAPS_LEN * MAX_MAPS_LEN];
-    int block_count;
-    bool is_reveald;
+typedef struct Corridor {
+  Point blocks[MAX_MAPS_LEN * MAX_MAPS_LEN];
+  int block_count;
+  bool is_reveald;
 } Corridor;
 
-typedef struct Map
-{
-    Room rooms[MAX_ROOMS];
-    int room_count;
-    Corridor corridors[MAX_CORRS];
+typedef struct Map {
+  Room rooms[MAX_ROOMS];
+  int room_count;
+  Corridor corridors[MAX_CORRS];
 } Map;
 
-
-typedef struct GamePthread
-{
-    Player *player;
-    Map *map;
+typedef struct GamePthread {
+  Player *player;
+  Map *map;
 } GamePthread;
 
-typedef struct GameSave
-{
-    Player player;
-    Map map;
-    char save_title[MAX_TITLE_LEN];
+typedef struct GameSave {
+  Player player;
+  Map map;
+  char save_title[MAX_TITLE_LEN];
 } GameSave;
 
 void start_game();
@@ -256,7 +253,10 @@ bool check_items(Room *room);
 bool check_weapons(Room *room);
 bool check_staircase(Room *room);
 bool check_monster(Room *room);
-bool move_monster(Room *room);
+void move_monster(Room *room);
+int weapon_count(int wtype);
+void remove_weapon(int wtype);
+void shoot_weapon(Monster *monster, Map *map);
 bool use_ancient_key();
 bool unlock_door(Map *map, Room *room, int index);
 void *generate_password_thread(void *arg);
@@ -267,7 +267,7 @@ void itemize_regular_room(Map *map, Room *room);
 void itemize_enchant_room(Map *map, Room *room);
 Point *create_door(Map *map, Room *room, int index);
 bool room_overlap(Room a, Room b);
-bool door_overlap(Point a, Point b);
+bool points_neighborhood(Point a, Point b);
 void M_mode_draw(Map *map);
 void handle_input(Map *map);
 WINDOW *list_window(const char *);
