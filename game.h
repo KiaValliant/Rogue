@@ -7,6 +7,7 @@
 #define MAX_TITLE_LEN 100
 #define MIN_ROOMS 7
 #define MAX_ROOMS 9
+#define MAX_FLOORS 2
 #define MIN_ROOM_LEN 4
 #define MAX_ROOM_LEN 10
 #define UMSG_X 10
@@ -60,13 +61,13 @@
 #define G_FEED_UNIT L"🍗"
 #define G_GOLD_UNIT L"🪙"
 #define G_PLAYER 'P' | COLOR_PAIR(ORANGE)
-// #define G_PLAYER L"⚔"
 #define G_DOT '.' | COLOR_PAIR(WHITE)
 #define G_BUTTON '&' | COLOR_PAIR(CYAN) | A_BLINK
 #define G_TRAP '^' | COLOR_PAIR(RED)
 #define G_PILLAR 'O' | COLOR_PAIR(WHITE) | A_REVERSE
 #define G_WINDOW '=' | COLOR_PAIR(WHITE)
 #define G_STAIRCASE '<' | COLOR_PAIR(GREEN) | A_BLINK | A_REVERSE
+#define G_TREASURE_S '$' | COLOR_PAIR(GOLD) | A_BLINK | A_REVERSE
 #define D_SIMPLE '+' | COLOR_PAIR(WHITE)
 #define D_SECRET '?' | COLOR_PAIR(WHITE)
 #define D_OPENED_P '@' | COLOR_PAIR(GREEN)
@@ -79,9 +80,9 @@
 #define I_GOLD 'o' | COLOR_PAIR(GOLD)
 #define I_BGOLD 'o' | COLOR_PAIR(GRAY)
 #define I_SIMPLE_FOOD 'f' | COLOR_PAIR(BLUE)
-#define I_HEALTH_SPELL '+' | COLOR_PAIR(BLUE)
-#define I_SPEED_SPELL '+' | COLOR_PAIR(MAGENTA)
-#define I_DAMAGE_SPELL '+' | COLOR_PAIR(BROWN)
+#define I_HEALTH_SPELL 's' | COLOR_PAIR(BLUE)
+#define I_SPEED_SPELL 's' | COLOR_PAIR(MAGENTA)
+#define I_DAMAGE_SPELL 's' | COLOR_PAIR(BROWN)
 #define I_ANCIENT_KEY 'k' | COLOR_PAIR(GOLD)
 #define IT_GOLD 0 // IT: item type
 #define IT_SIMPLE_FOOD 1
@@ -127,6 +128,24 @@
 #define M_GIANT_HP 15
 #define M_SNAKE_HP 20
 #define M_UNDEED_HP 30
+#define G_EASY 0
+#define G_NORMAL 1
+#define G_HARD 2 
+#define M_DEAMON_DAMAGE_EASY 1
+#define M_FIRE_BREATHING_DAMAGE_EASY 2
+#define M_GIANT_DAMAGE_EASY 5
+#define M_SNAKE_DAMAGE_EASY 7
+#define M_UNDEED_DAMAGE_EASY 10
+#define M_DEAMON_DAMAGE_NORMAL 2
+#define M_FIRE_BREATHING_DAMAGE_NORMAL 3
+#define M_GIANT_DAMAGE_NORMAL 7
+#define M_SNAKE_DAMAGE_NORMAL 10
+#define M_UNDEED_DAMAGE_NORMAL 14
+#define M_DEAMON_DAMAGE_HARD 3
+#define M_FIRE_BREATHING_DAMAGE_HARD 5
+#define M_GIANT_DAMAGE_HARD 9
+#define M_SNAKE_DAMAGE_HARD 12
+#define M_UNDEED_DAMAGE_HARD 17
 #define NO_MONSTER -1
 #define TOP_RIGHT 0
 #define TOP_LEFT 1
@@ -190,6 +209,7 @@ typedef struct Player {
   int weapon_count;
   Weapon active_weapon;
   int curr_area;
+  int curr_floor;
 } Player;
 
 typedef struct Room {
@@ -205,6 +225,7 @@ typedef struct Room {
   Point pillar;
   Point window;
   Point staircase;
+  Point treasure_symbol;
   Item items[MAX_ITEMS];
   int item_count;
   Weapon weapons[MAX_WEAPONS];
@@ -239,24 +260,28 @@ typedef struct GameSave {
 
 void start_game();
 void resume_game();
+void game_over();
 void create_map(Map *map);
 void redraw_map(Map *map);
 void redraw_screen(Map *map);
 void connect_rooms(Point door1, Point door2, Map *map, int corr_index);
 void check_position(Map *map);
-bool check_collision();
+bool check_collision(Point pos, int dir, bool is_player);
 bool check_traps(Room *room, bool s_pressed);
 Point *check_secret_doors(Room *room, bool s_pressed);
 bool check_button(Map *map, Room *room);
 bool check_password_doors(Map *map, Room *room);
 bool check_items(Room *room);
 bool check_weapons(Room *room);
-bool check_staircase(Room *room);
+bool check_staircase(Map *map, Room *room);
 bool check_monster(Room *room);
+bool check_treasure_symbol(Map *map, Room *room);
+void treasure_room(Map *map);
 void move_monster(Room *room);
+bool monster_attack(Map *map, Room *room, int game_difficulty);
 int weapon_count(int wtype);
 void remove_weapon(int wtype);
-void shoot_weapon(Monster *monster, Map *map);
+void shoot_weapon(Monster *monster, Map *map, bool damage_spell_used);
 bool use_ancient_key();
 bool unlock_door(Map *map, Room *room, int index);
 void *generate_password_thread(void *arg);
@@ -265,6 +290,7 @@ Room *generate_room(int area);
 Item *random_point(Room *room);
 void itemize_regular_room(Map *map, Room *room);
 void itemize_enchant_room(Map *map, Room *room);
+void itemize_treasure_room(Map *map, Room *room);
 Point *create_door(Map *map, Room *room, int index);
 bool room_overlap(Room a, Room b);
 bool points_neighborhood(Point a, Point b);
@@ -272,9 +298,8 @@ void M_mode_draw(Map *map);
 void handle_input(Map *map);
 WINDOW *list_window(const char *);
 void food_list();
-void spell_list();
+int spell_list();
 void weapon_list();
-void use_spells(int spell_type);
 void temp_room(Map *map);
 void print_umsg(const char *format, ...);
 void draw_player();

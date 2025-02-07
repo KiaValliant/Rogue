@@ -1,17 +1,17 @@
+#include "game.h"
+#include "mainh.h"
+#include "menu.h"
 #include <locale.h>
 #include <math.h>
 #include <ncurses.h>
 #include <pthread.h>
-#include <stdbool.h>
 #include <stdarg.h>
+#include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <stdio.h>
 #include <time.h>
-#include "mainh.h"
-#include "game.h"
-#include "menu.h"
+#include <unistd.h>
 #define DEBUG_PRINTS
 #ifdef DEBUG_PRINTS
 #define DEBUG(y, x, fmt, args...)                                              \
@@ -22,41 +22,44 @@
 #endif
 
 Player player;
+Map maps[MAX_FLOORS];
 chtype wall[2][3] = {{
                          '_' | COLOR_PAIR(ORANGE),
                          '_' | COLOR_PAIR(CYAN),
-                         '_' | COLOR_PAIR(GOLD),
+                         '_' | COLOR_PAIR(MAGENTA),
                      },
                      {
                          '|' | COLOR_PAIR(ORANGE),
                          '|' | COLOR_PAIR(CYAN),
-                         '|' | COLOR_PAIR(GOLD),
+                         '|' | COLOR_PAIR(MAGENTA),
                      }};
 
 void start_game() {
     initscr();
     setlocale(LC_ALL, "");
     curs_set(0);
-    Map map;
-    create_map(&map);
-    // curr_room = &map.rooms[player.curr_area];
+    player.curr_floor = 0;
+    create_map(&maps[player.curr_floor]);
     clear();
-    map.rooms[player.curr_area].is_reveald = true;
-    spawn_player(map.rooms[player.curr_area]);
-    redraw_screen(&map);
+    maps[player.curr_floor].rooms[player.curr_area].is_reveald = true;
+    spawn_player(maps[player.curr_floor].rooms[player.curr_area]);
+    redraw_screen(&maps[player.curr_floor]);
     timeout(-1);
     noecho();
-    draw_player();
     while (true) {
-        handle_input(&map);
+        handle_input(&maps[player.curr_floor]);
     }
     endwin();
 }
 
 void handle_input(Map *map) {
     bool pressed[128] = {false};
+    static int move_range = 1;
+    static int spell_time_count[5] = {0};
+    static bool damage_spell_used = false;
     bool no_dir_needed = (player.active_weapon.type == WT_MACE ||
                           player.active_weapon.type == WT_SWORD);
+    static int spell_use = -1;
     nodelay(stdscr, TRUE);
     timeout(200);
     int ch = getch();
@@ -65,7 +68,7 @@ void handle_input(Map *map) {
     }
     if (!pressed['f'] && !pressed['g'] && !pressed[' '] && !pressed['M'] &&
             !pressed['s'] && !pressed['E'] && !pressed['R'] && !pressed['i'] &&
-            !pressed['A'] && !pressed['w'] ||
+            !pressed['A'] && !pressed['w'] && !pressed['>'] ||
         pressed['s']) {
         player.dir = ch;
     } else if (pressed['A']) {
@@ -73,7 +76,12 @@ void handle_input(Map *map) {
     } else if (pressed['M']) {
         M_mode_draw(map);
     } else if (pressed['R']) {
-        spell_list();
+        spell_use = spell_list();
+        if (spell_use == IT_DAMAGE_SPELL) {
+            damage_spell_used = true;
+        } else if (spell_use == IT_SPEED_SPELL) {
+            move_range = 2;
+        }
     } else if (pressed['E']) {
         food_list();
     } else if (pressed['w']) {
@@ -81,12 +89,33 @@ void handle_input(Map *map) {
     } else if (pressed['i']) {
         weapon_list();
         return;
+    } else if (pressed['>']) {
+        check_staircase(map, &map->rooms[player.curr_area]);
     } else if (!no_dir_needed || !pressed[' ']) {
-        // timeout(30000);
         player.dir = getch();
     }
     flushinp();
     if (player.dir != ERR || no_dir_needed && pressed[' ']) {
+        static int last_damage_count = 0;
+        if (last_damage_count++ >= 50 && last_damage_count <= 150 &&
+            player.feed >= 100) {
+            if (player.HP <= FULL_HP - 1 && spell_use != IT_HEALTH_SPELL) {
+                player.HP += 1;
+            } else if (player.HP <= FULL_HP - 2 &&
+                       spell_use == IT_HEALTH_SPELL) {
+                player.HP += 2;
+                spell_time_count[IT_HEALTH_SPELL]++;
+                if (spell_time_count[IT_HEALTH_SPELL] >= 10) {
+                    spell_time_count[IT_HEALTH_SPELL] = 0;
+                    spell_use = -1;
+                }
+            } else {
+                player.HP = FULL_HP;
+            }
+            if (last_damage_count == 150) {
+                last_damage_count = 0;
+            }
+        }
         if (check_password_doors(map, &map->rooms[player.curr_area])) {
             redraw_screen(map);
             return;
@@ -94,70 +123,157 @@ void handle_input(Map *map) {
         if (check_secret_doors(&map->rooms[player.curr_area], pressed['s'])) {
             return;
         }
-        if (check_collision(player.pos, player.dir))
+        if (check_collision(player.pos, player.dir, true))
             return;
-        move_monster(&map->rooms[player.curr_area]);
-        redraw_screen(map);
         do {
-            if (!pressed[' ']) {
+            if (!pressed[' '] && spell_time_count[IT_SPEED_SPELL]++ <= 10) {
+                if (spell_time_count[IT_SPEED_SPELL] > 10) {
+                    spell_time_count[IT_SPEED_SPELL] = 0;
+                    spell_use = -1;
+                    move_range = 1;
+                }
                 switch (player.dir) {
                 case 'j':
-                    player.pos.y--;
+                    move_monster(&map->rooms[player.curr_area]);
+                    player.pos.y -= move_range;
+                    if (monster_attack(map, &map->rooms[player.curr_area],
+                                       G_NORMAL)) {
+                        last_damage_count = 0;
+                    }
                     break;
                 case 'u':
                     player.pos.x++;
                     player.pos.y--;
+                    move_monster(&map->rooms[player.curr_area]);
+                    if (monster_attack(map, &map->rooms[player.curr_area],
+                                       G_NORMAL)) {
+                        last_damage_count = 0;
+                    }
                     break;
                 case 'l':
-                    player.pos.x++;
+                    player.pos.x += move_range;
+                    move_monster(&map->rooms[player.curr_area]);
+                    if (monster_attack(map, &map->rooms[player.curr_area],
+                                       G_NORMAL)) {
+                        last_damage_count = 0;
+                    }
                     break;
                 case 'n':
                     player.pos.x++;
                     player.pos.y++;
+                    move_monster(&map->rooms[player.curr_area]);
+                    if (monster_attack(map, &map->rooms[player.curr_area],
+                                       G_NORMAL)) {
+                        last_damage_count = 0;
+                    }
                     break;
                 case 'k':
-                    player.pos.y++;
+                    player.pos.y += move_range;
+                    move_monster(&map->rooms[player.curr_area]);
+                    if (monster_attack(map, &map->rooms[player.curr_area],
+                                       G_NORMAL)) {
+                        last_damage_count = 0;
+                    }
                     break;
                 case 'b':
                     player.pos.x--;
                     player.pos.y++;
+                    move_monster(&map->rooms[player.curr_area]);
+                    if (monster_attack(map, &map->rooms[player.curr_area],
+                                       G_NORMAL)) {
+                        last_damage_count = 0;
+                    }
                     break;
                 case 'h':
-                    player.pos.x--;
+                    player.pos.x -= move_range;
+                    move_monster(&map->rooms[player.curr_area]);
+                    if (monster_attack(map, &map->rooms[player.curr_area],
+                                       G_NORMAL)) {
+                        last_damage_count = 0;
+                    }
+
                     break;
                 case 'y':
                     player.pos.x--;
                     player.pos.y--;
+                    move_monster(&map->rooms[player.curr_area]);
+                    if (monster_attack(map, &map->rooms[player.curr_area],
+                                       G_NORMAL)) {
+                        last_damage_count = 0;
+                    }
                     break;
                 default:
                     break;
                 }
             }
-            if (pressed[' ']) {
-                // debug_window(0, 0, "1", 1, 1);
-                shoot_weapon(&map->rooms[player.curr_area].monster, map);
+            redraw_screen(map);
+            int last_hit;
+            if (pressed[' '] && !pressed['a']) {
+                last_hit = player.dir;
+                shoot_weapon(&map->rooms[player.curr_area].monster, map,
+                             damage_spell_used);
+                if (spell_time_count[IT_DAMAGE_SPELL]++ > 10) {
+                    spell_use = -1;
+                    damage_spell_used = false;
+                    spell_time_count[IT_DAMAGE_SPELL] = 0;
+                }
+            } else if (pressed['a']) {
+                player.dir = last_hit;
+                shoot_weapon(&map->rooms[player.curr_area].monster, map,
+                             damage_spell_used);
+                if (spell_time_count[IT_DAMAGE_SPELL]++ > 10) {
+                    spell_use = -1;
+                    damage_spell_used = false;
+                    spell_time_count[IT_DAMAGE_SPELL] = 0;
+                }
             }
             redraw_screen(map);
-            check_traps(&map->rooms[player.curr_area], pressed['s']);
+            if (check_traps(&map->rooms[player.curr_area], pressed['s'])) {
+                last_damage_count = 0;
+            }
             check_position(map);
             if (!pressed['g']) {
                 check_button(map, &map->rooms[player.curr_area]);
                 check_items(&map->rooms[player.curr_area]);
                 check_weapons(&map->rooms[player.curr_area]);
             }
+            check_treasure_symbol(map, &map->rooms[player.curr_area]);
             redraw_screen(map);
             usleep(15000);
-        } while (!check_collision(player.pos, player.dir) && pressed['f']);
+        } while (!check_collision(player.pos, player.dir, true) &&
+                 pressed['f']);
     }
 }
 
 void resume_game() {}
 
+void game_over() {
+    WINDOW *lwin = list_window("!!! GAME OVER !!!");
+    mvwaddwstr(lwin, 3, LIST_WIDTH / 2 - 5, L"🕱🕱🕱🕱🕱🕱🕱🕱🕱");
+    wrefresh(lwin);
+    sleep(5);
+    delwin(lwin);
+#ifdef _WIN32
+    system("cls");
+#else
+    system("clear");
+    system("reset");
+#endif
+    exit(EXIT_SUCCESS);
+}
+
 void create_map(Map *map) {
     srand(time(NULL));
     int made_rooms = 0;
-    map->room_count = rand() % 3 + 7;
-    player.curr_area = rand() % map->room_count;
+    if (player.curr_floor == 0) {
+        map->room_count = rand() % 3 + 7;
+    } else {
+        map->room_count = maps[0].room_count;
+    }
+
+    if (player.curr_floor == 0) {
+        player.curr_area = rand() % map->room_count;
+    }
 
     // make rooms
     while (made_rooms < map->room_count) {
@@ -222,14 +338,25 @@ void create_map(Map *map) {
     }
 
     // make staircase
-    int sc_area;
-    do {
-        sc_area = rand() % map->room_count;
-    } while (sc_area == player.curr_area);
-    Item *point = random_point(&map->rooms[sc_area]);
-    map->rooms[sc_area].staircase.x = point->pos.x;
-    map->rooms[sc_area].staircase.y = point->pos.y;
-    free(point);
+    if (player.curr_floor == 0) {
+        int sc_area;
+        do {
+            sc_area = rand() % map->room_count;
+        } while (sc_area == player.curr_area);
+        Item *point = random_point(&map->rooms[sc_area]);
+        map->rooms[sc_area].staircase.x = point->pos.x;
+        map->rooms[sc_area].staircase.y = point->pos.y;
+        free(point);
+    }
+
+    // make treasure symbol
+    if (player.curr_floor == 1) {
+        int ts_area = rand() % (map->room_count - 1) + 1;
+        Item *point = random_point(&map->rooms[ts_area]);
+        map->rooms[ts_area].treasure_symbol.x = point->pos.x;
+        map->rooms[ts_area].treasure_symbol.y = point->pos.y;
+        free(point);
+    }
 }
 
 Point *create_door(Map *map, Room *room, int index) {
@@ -411,7 +538,7 @@ void itemize_regular_room(Map *map, Room *room) {
     }
 
     // monster
-    int monster_probabality = rand() % 1;
+    int monster_probabality = rand() % 2;
     if (monster_probabality == 0) {
         Item *point = random_point(room);
         room->monster.pos.x = point->pos.x;
@@ -456,6 +583,30 @@ void itemize_enchant_room(Map *map, Room *room) {
         free(item);
         redraw_map(map);
     }
+}
+
+void itemize_treasure_room(Map *map, Room *room) {
+    redraw_map(map);
+
+    // make traps
+    int trap_count = rand() % 3 + 4;
+    for (int i = 0; i < trap_count; i++) {
+        Item *point = random_point(room);
+        room->traps[i].x = point->pos.x;
+        room->traps[i].y = point->pos.y;
+        free(point);
+        room->traps[i].is_triggered = false;
+        redraw_map(map);
+    }
+
+    // make monster
+    Item *point = random_point(room);
+    room->monster.pos.x = point->pos.x;
+    room->monster.pos.y = point->pos.y;
+    free(point);
+    room->monster.type = MT_UNDEED;
+    room->monster.HP = M_UNDEED_HP;
+    redraw_map(map);
 }
 
 Room *generate_room(int area) {
@@ -627,6 +778,9 @@ void draw_room(Room *room, int mode) {
         } else if (room->theme == RT_ENCHANT) {
             mvaddch(y, i, wall[HOR][RT_ENCHANT]);
             mvaddch(y + length + 1, i, wall[HOR][RT_ENCHANT]);
+        } else if (room->theme == RT_TREASURE) {
+            mvaddch(y, i, wall[HOR][RT_TREASURE]);
+            mvaddch(y + length + 1, i, wall[HOR][RT_TREASURE]);
         }
     }
 
@@ -637,6 +791,9 @@ void draw_room(Room *room, int mode) {
         } else if (room->theme == RT_ENCHANT) {
             mvaddch(i, x, wall[VER][RT_ENCHANT]);
             mvaddch(i, x + length + 1, wall[VER][RT_ENCHANT]);
+        } else if (room->theme == RT_TREASURE) {
+            mvaddch(i, x, wall[VER][RT_TREASURE]);
+            mvaddch(i, x + length + 1, wall[VER][RT_TREASURE]);
         }
     }
 
@@ -679,7 +836,7 @@ void draw_room(Room *room, int mode) {
     mvaddch(room->pillar.y, room->pillar.x, G_PILLAR);
 
     // draw window
-    mvaddch(room->window.y, room->window.x, G_WINDOW);
+    // mvaddch(room->window.y, room->window.x, G_WINDOW);
 
     // draw traps
     for (int i = 0; i < MAX_TRAPS; i++) {
@@ -690,6 +847,9 @@ void draw_room(Room *room, int mode) {
 
     // draw staircase
     mvaddch(room->staircase.y, room->staircase.x, G_STAIRCASE);
+
+    // draw treasure symbol
+    mvaddch(room->treasure_symbol.y, room->treasure_symbol.x, G_TREASURE_S);
 
     // draw weapons
     for (int i = 0; i < room->weapon_count; i++) {
@@ -823,6 +983,83 @@ void spawn_player(Room room) {
     player.pos.y = y + length / 2;
 }
 
+bool monster_attack(Map *map, Room *room, int game_difficulty) {
+    Point p = player.pos, m = room->monster.pos;
+    if (!points_neighborhood(p, m)) {
+        return false;
+    }
+    switch (room->monster.type) {
+    case MT_DEAMON:
+        if (player.HP > M_DEAMON_DAMAGE_NORMAL) {
+            player.HP -= M_DEAMON_DAMAGE_NORMAL;
+            redraw_screen(map);
+            print_umsg("Ouch! The Deamon inflicted %d points of damage on you! "
+                       "Be careful.",
+                       M_DEAMON_DAMAGE_NORMAL);
+        } else {
+            player.HP = 0;
+            redraw_screen(map);
+            game_over();
+        }
+        break;
+    case MT_FIRE_BREATHING:
+        if (player.HP > M_FIRE_BREATHING_DAMAGE_NORMAL) {
+            player.HP -= M_FIRE_BREATHING_DAMAGE_NORMAL;
+            redraw_screen(map);
+            print_umsg("Ouch! The Fire Breathing Monster inflicted %d points "
+                       "of damage on you! Be careful.",
+                       M_FIRE_BREATHING_DAMAGE_NORMAL);
+        } else {
+            player.HP = 0;
+            redraw_screen(map);
+            game_over();
+        }
+        break;
+    case MT_GIANT:
+        if (player.HP > M_GIANT_DAMAGE_NORMAL) {
+            player.HP -= M_GIANT_DAMAGE_NORMAL;
+            redraw_screen(map);
+            print_umsg("Ouch! The Giant inflicted %d points of damage on you! "
+                       "Be careful.",
+                       M_GIANT_DAMAGE_NORMAL);
+        } else {
+            player.HP = 0;
+            redraw_screen(map);
+            game_over();
+        }
+        break;
+    case MT_SNAKE:
+        if (player.HP > M_SNAKE_DAMAGE_NORMAL) {
+            player.HP -= M_SNAKE_DAMAGE_NORMAL;
+            redraw_screen(map);
+            print_umsg("Ouch! The Snake inflicted %d points of damage on you! "
+                       "Be careful.",
+                       M_SNAKE_DAMAGE_NORMAL);
+        } else {
+            player.HP = 0;
+            redraw_screen(map);
+            game_over();
+        }
+        break;
+    case MT_UNDEED:
+        if (player.HP > M_UNDEED_DAMAGE_NORMAL) {
+            player.HP -= M_UNDEED_DAMAGE_NORMAL;
+            redraw_screen(map);
+            print_umsg("Ouch! The Undeed inflicted %d points of damage on you! "
+                       "Be careful.",
+                       M_UNDEED_DAMAGE_NORMAL);
+        } else {
+            player.HP = 0;
+            redraw_screen(map);
+            game_over();
+        }
+        break;
+    default:
+        break;
+    }
+    return true;
+}
+
 void move_monster(Room *room) {
     if (room->monster.type == NO_MONSTER || room->monster.type == MT_DEAMON ||
         room->monster.type == MT_FIRE_BREATHING)
@@ -832,6 +1069,11 @@ void move_monster(Room *room) {
     Point m = room->monster.pos;
 
     if (points_neighborhood(m, p)) {
+        return;
+    }
+    int dx = abs(p.x - m.x);
+    int dy = abs(p.y - m.y);
+    if (dx == 1 || dy == 1) {
         return;
     }
 
@@ -863,13 +1105,13 @@ void move_monster(Room *room) {
     case TOP_RIGHT:
         if (player.dir == 'j' || player.dir == 'k') {
             room->monster.dir = 'j';
-            if (check_collision(room->monster.pos, room->monster.dir)) {
+            if (check_collision(room->monster.pos, room->monster.dir, false)) {
                 return;
             }
             room->monster.pos.y--;
         } else if (player.dir == 'h' || player.dir == 'l') {
             room->monster.dir = 'l';
-            if (check_collision(room->monster.pos, room->monster.dir)) {
+            if (check_collision(room->monster.pos, room->monster.dir, false)) {
                 return;
             }
             room->monster.pos.x++;
@@ -878,13 +1120,13 @@ void move_monster(Room *room) {
     case TOP_LEFT:
         if (player.dir == 'j' || player.dir == 'k') {
             room->monster.dir = 'j';
-            if (check_collision(room->monster.pos, room->monster.dir)) {
+            if (check_collision(room->monster.pos, room->monster.dir, false)) {
                 return;
             }
             room->monster.pos.y--;
         } else if (player.dir == 'h' || player.dir == 'l') {
             room->monster.dir = 'h';
-            if (check_collision(room->monster.pos, room->monster.dir)) {
+            if (check_collision(room->monster.pos, room->monster.dir, false)) {
                 return;
             }
             room->monster.pos.x--;
@@ -893,13 +1135,13 @@ void move_monster(Room *room) {
     case DOWN_LEFT:
         if (player.dir == 'j' || player.dir == 'k') {
             room->monster.dir = 'k';
-            if (check_collision(room->monster.pos, room->monster.dir)) {
+            if (check_collision(room->monster.pos, room->monster.dir, false)) {
                 return;
             }
             room->monster.pos.y++;
         } else if (player.dir == 'h' || player.dir == 'l') {
             room->monster.dir = 'h';
-            if (check_collision(room->monster.pos, room->monster.dir)) {
+            if (check_collision(room->monster.pos, room->monster.dir, false)) {
                 return;
             }
             room->monster.pos.x--;
@@ -908,13 +1150,13 @@ void move_monster(Room *room) {
     case DOWN_RIGHT:
         if (player.dir == 'j' || player.dir == 'k') {
             room->monster.dir = 'k';
-            if (check_collision(room->monster.pos, room->monster.dir)) {
+            if (check_collision(room->monster.pos, room->monster.dir, false)) {
                 return;
             }
             room->monster.pos.y++;
         } else if (player.dir == 'h' || player.dir == 'l') {
             room->monster.dir = 'l';
-            if (check_collision(room->monster.pos, room->monster.dir)) {
+            if (check_collision(room->monster.pos, room->monster.dir, false)) {
                 return;
             }
             room->monster.pos.x++;
@@ -922,28 +1164,28 @@ void move_monster(Room *room) {
         break;
     case TOP:
         room->monster.dir = 'j';
-        if (check_collision(room->monster.pos, room->monster.dir)) {
+        if (check_collision(room->monster.pos, room->monster.dir, false)) {
             return;
         }
         room->monster.pos.y--;
         break;
     case DOWN:
         room->monster.dir = 'k';
-        if (check_collision(room->monster.pos, room->monster.dir)) {
+        if (check_collision(room->monster.pos, room->monster.dir, false)) {
             return;
         }
         room->monster.pos.y++;
         break;
     case RIGHT:
         room->monster.dir = 'l';
-        if (check_collision(room->monster.pos, room->monster.dir)) {
+        if (check_collision(room->monster.pos, room->monster.dir, false)) {
             return;
         }
         room->monster.pos.x++;
         break;
     case LEFT:
         room->monster.dir = 'h';
-        if (check_collision(room->monster.pos, room->monster.dir)) {
+        if (check_collision(room->monster.pos, room->monster.dir, false)) {
             return;
         }
         room->monster.pos.x--;
@@ -973,7 +1215,11 @@ void remove_weapon(int wtype) {
     }
 }
 
-void shoot_weapon(Monster *monster, Map *map) {
+void shoot_weapon(Monster *monster, Map *map, bool damage_spell_used) {
+    int factor = 1;
+    if (damage_spell_used) {
+        factor = 2;
+    }
     Point p = player.pos;
     Point m = monster->pos;
     char *monster_name;
@@ -996,7 +1242,7 @@ void shoot_weapon(Monster *monster, Map *map) {
     default:
         break;
     }
-    if (player.active_weapon.type == NO_WEAPON) {
+    if (player.active_weapon.type == NO_WEAPON || monster->type == NO_MONSTER) {
         return;
     }
     if (player.active_weapon.type == WT_MACE) {
@@ -1006,8 +1252,8 @@ void shoot_weapon(Monster *monster, Map *map) {
             p.x - 1 == m.x && p.y - 1 == m.y ||
             p.x - 1 == m.x && p.y + 1 == m.y ||
             p.x + 1 == m.x && p.y - 1 == m.y) {
-            if (monster->HP > W_MACE_DAMAGE) {
-                monster->HP -= W_MACE_DAMAGE;
+            if (monster->HP > factor * W_MACE_DAMAGE) {
+                monster->HP -= factor * W_MACE_DAMAGE;
                 print_umsg("Well done! You hit the %s! it's HP is %d now.",
                            monster_name, monster->HP);
             } else {
@@ -1024,8 +1270,8 @@ void shoot_weapon(Monster *monster, Map *map) {
             p.x - 1 == m.x && p.y - 1 == m.y ||
             p.x - 1 == m.x && p.y + 1 == m.y ||
             p.x + 1 == m.x && p.y - 1 == m.y) {
-            if (monster->HP > W_SWORD_DAMAGE) {
-                monster->HP -= W_SWORD_DAMAGE;
+            if (monster->HP > factor * W_SWORD_DAMAGE) {
+                monster->HP -= factor * W_SWORD_DAMAGE;
                 print_umsg("Well done! You hit the %s! it's HP is %d now.",
                            monster_name, monster->HP);
             } else {
@@ -1042,13 +1288,14 @@ void shoot_weapon(Monster *monster, Map *map) {
             bool check = true;
             int i, ch = 0;
             for (i = 1; i <= W_DAGGER_RANGE &&
-                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_');
+                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_' &&
+                         (ch & A_CHARTEXT) != 'O');
                  i++) {
                 ch = mvinch(p.y - i, p.x);
                 if (p.x == m.x && p.y - i == m.y) {
                     check = false;
-                    if (monster->HP > W_DAGGER_DAMAGE) {
-                        monster->HP -= W_DAGGER_DAMAGE;
+                    if (monster->HP > factor * W_DAGGER_DAMAGE) {
+                        monster->HP -= factor * W_DAGGER_DAMAGE;
                         print_umsg(
                             "Well done! You hit the %s! it's HP is %d now.",
                             monster_name, monster->HP);
@@ -1083,13 +1330,14 @@ void shoot_weapon(Monster *monster, Map *map) {
             check = true;
             ch = 0;
             for (i = 1; i <= W_DAGGER_RANGE &&
-                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_');
+                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_' &&
+                         (ch & A_CHARTEXT) != 'O');
                  i++) {
                 ch = mvinch(p.y + i, p.x);
                 if (p.x == m.x && p.y + i == m.y) {
                     check = false;
-                    if (monster->HP > W_DAGGER_DAMAGE) {
-                        monster->HP -= W_DAGGER_DAMAGE;
+                    if (monster->HP > factor * W_DAGGER_DAMAGE) {
+                        monster->HP -= factor * W_DAGGER_DAMAGE;
                         print_umsg(
                             "Well done! You hit the %s! it's HP is %d now.",
                             monster_name, monster->HP);
@@ -1124,13 +1372,14 @@ void shoot_weapon(Monster *monster, Map *map) {
             check = true;
             ch = 0;
             for (i = 1; i <= W_DAGGER_RANGE &&
-                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_');
+                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_' &&
+                         (ch & A_CHARTEXT) != 'O');
                  i++) {
                 ch = mvinch(p.y, p.x + i);
                 if (p.x + i == m.x && p.y == m.y) {
                     check = false;
-                    if (monster->HP > W_DAGGER_DAMAGE) {
-                        monster->HP -= W_DAGGER_DAMAGE;
+                    if (monster->HP > factor * W_DAGGER_DAMAGE) {
+                        monster->HP -= factor * W_DAGGER_DAMAGE;
                         print_umsg(
                             "Well done! You hit the %s! it's HP is %d now.",
                             monster_name, monster->HP);
@@ -1165,14 +1414,15 @@ void shoot_weapon(Monster *monster, Map *map) {
             check = true;
             ch = 0;
             for (i = 1; i <= W_DAGGER_RANGE &&
-                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_');
+                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_' &&
+                         (ch & A_CHARTEXT) != 'O');
                  i++) {
                 ch = mvinch(p.y, p.x - i);
                 if (p.x - i == m.x && p.y == m.y &&
                     monster->type != NO_MONSTER) {
                     check = false;
-                    if (monster->HP > W_DAGGER_DAMAGE) {
-                        monster->HP -= W_DAGGER_DAMAGE;
+                    if (monster->HP > factor * W_DAGGER_DAMAGE) {
+                        monster->HP -= factor * W_DAGGER_DAMAGE;
                         print_umsg(
                             "Well done! You hit the %s! it's HP is %d now.",
                             monster_name, monster->HP);
@@ -1213,13 +1463,14 @@ void shoot_weapon(Monster *monster, Map *map) {
             bool check = true;
             int i, ch = 0;
             for (i = 1; i <= W_MAGIC_WAND_RANGE &&
-                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_');
+                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_' &&
+                         (ch & A_CHARTEXT) != 'O');
                  i++) {
                 ch = mvinch(p.y - i, p.x);
                 if (p.x == m.x && p.y - i == m.y) {
                     check = false;
-                    if (monster->HP > W_MAGIC_WAND_DAMAGE) {
-                        monster->HP -= W_MAGIC_WAND_DAMAGE;
+                    if (monster->HP > factor * W_MAGIC_WAND_DAMAGE) {
+                        monster->HP -= factor * W_MAGIC_WAND_DAMAGE;
                         print_umsg(
                             "Well done! You hit the %s! it's HP is %d now.",
                             monster_name, monster->HP);
@@ -1254,13 +1505,14 @@ void shoot_weapon(Monster *monster, Map *map) {
             check = true;
             ch = 0;
             for (i = 1; i <= W_MAGIC_WAND_RANGE &&
-                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_');
+                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_' &&
+                         (ch & A_CHARTEXT) != 'O');
                  i++) {
                 ch = mvinch(p.y + i, p.x);
                 if (p.x == m.x && p.y + i == m.y) {
                     check = false;
-                    if (monster->HP > W_MAGIC_WAND_DAMAGE) {
-                        monster->HP -= W_MAGIC_WAND_DAMAGE;
+                    if (monster->HP > factor * W_MAGIC_WAND_DAMAGE) {
+                        monster->HP -= factor * W_MAGIC_WAND_DAMAGE;
                         print_umsg(
                             "Well done! You hit the %s! it's HP is %d now.",
                             monster_name, monster->HP);
@@ -1295,13 +1547,14 @@ void shoot_weapon(Monster *monster, Map *map) {
             check = true;
             ch = 0;
             for (i = 1; i <= W_MAGIC_WAND_RANGE &&
-                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_');
+                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_' &&
+                         (ch & A_CHARTEXT) != 'O');
                  i++) {
                 ch = mvinch(p.y, p.x + i);
                 if (p.x + i == m.x && p.y == m.y) {
                     check = false;
-                    if (monster->HP > W_MAGIC_WAND_DAMAGE) {
-                        monster->HP -= W_MAGIC_WAND_DAMAGE;
+                    if (monster->HP > factor * W_MAGIC_WAND_DAMAGE) {
+                        monster->HP -= factor * W_MAGIC_WAND_DAMAGE;
                         print_umsg(
                             "Well done! You hit the %s! it's HP is %d now.",
                             monster_name, monster->HP);
@@ -1336,14 +1589,15 @@ void shoot_weapon(Monster *monster, Map *map) {
             check = true;
             ch = 0;
             for (i = 1; i <= W_MAGIC_WAND_RANGE &&
-                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_');
+                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_' &&
+                         (ch & A_CHARTEXT) != 'O');
                  i++) {
                 ch = mvinch(p.y, p.x - i);
                 if (p.x - i == m.x && p.y == m.y &&
                     monster->type != NO_MONSTER) {
                     check = false;
-                    if (monster->HP > W_MAGIC_WAND_DAMAGE) {
-                        monster->HP -= W_MAGIC_WAND_DAMAGE;
+                    if (monster->HP > factor * W_MAGIC_WAND_DAMAGE) {
+                        monster->HP -= factor * W_MAGIC_WAND_DAMAGE;
                         print_umsg(
                             "Well done! You hit the %s! it's HP is %d now.",
                             monster_name, monster->HP);
@@ -1384,13 +1638,14 @@ void shoot_weapon(Monster *monster, Map *map) {
             bool check = true;
             int i, ch = 0;
             for (i = 1; i <= W_NORMAL_ARROW_RANGE &&
-                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_');
+                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_' &&
+                         (ch & A_CHARTEXT) != 'O');
                  i++) {
                 ch = mvinch(p.y - i, p.x);
                 if (p.x == m.x && p.y - i == m.y) {
                     check = false;
-                    if (monster->HP > W_NORMAL_ARROW_DAMAGE) {
-                        monster->HP -= W_NORMAL_ARROW_DAMAGE;
+                    if (monster->HP > factor * W_NORMAL_ARROW_DAMAGE) {
+                        monster->HP -= factor * W_NORMAL_ARROW_DAMAGE;
                         print_umsg(
                             "Well done! You hit the %s! it's HP is %d now.",
                             monster_name, monster->HP);
@@ -1425,13 +1680,14 @@ void shoot_weapon(Monster *monster, Map *map) {
             check = true;
             ch = 0;
             for (i = 1; i <= W_NORMAL_ARROW_RANGE &&
-                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_');
+                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_' &&
+                         (ch & A_CHARTEXT) != 'O');
                  i++) {
                 ch = mvinch(p.y + i, p.x);
                 if (p.x == m.x && p.y + i == m.y) {
                     check = false;
-                    if (monster->HP > W_NORMAL_ARROW_DAMAGE) {
-                        monster->HP -= W_NORMAL_ARROW_DAMAGE;
+                    if (monster->HP > factor * W_NORMAL_ARROW_DAMAGE) {
+                        monster->HP -= factor * W_NORMAL_ARROW_DAMAGE;
                         print_umsg(
                             "Well done! You hit the %s! it's HP is %d now.",
                             monster_name, monster->HP);
@@ -1466,13 +1722,14 @@ void shoot_weapon(Monster *monster, Map *map) {
             check = true;
             ch = 0;
             for (i = 1; i <= W_NORMAL_ARROW_RANGE &&
-                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_');
+                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_' &&
+                         (ch & A_CHARTEXT) != 'O');
                  i++) {
                 ch = mvinch(p.y, p.x + i);
                 if (p.x + i == m.x && p.y == m.y) {
                     check = false;
-                    if (monster->HP > W_NORMAL_ARROW_DAMAGE) {
-                        monster->HP -= W_NORMAL_ARROW_DAMAGE;
+                    if (monster->HP > factor * W_NORMAL_ARROW_DAMAGE) {
+                        monster->HP -= factor * W_NORMAL_ARROW_DAMAGE;
                         print_umsg(
                             "Well done! You hit the %s! it's HP is %d now.",
                             monster_name, monster->HP);
@@ -1507,14 +1764,15 @@ void shoot_weapon(Monster *monster, Map *map) {
             check = true;
             ch = 0;
             for (i = 1; i <= W_NORMAL_ARROW_RANGE &&
-                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_');
+                        ((ch & A_CHARTEXT) != '|' && (ch & A_CHARTEXT) != '_' &&
+                         (ch & A_CHARTEXT) != 'O');
                  i++) {
                 ch = mvinch(p.y, p.x - i);
                 if (p.x - i == m.x && p.y == m.y &&
                     monster->type != NO_MONSTER) {
                     check = false;
-                    if (monster->HP > W_NORMAL_ARROW_DAMAGE) {
-                        monster->HP -= W_NORMAL_ARROW_DAMAGE;
+                    if (monster->HP > factor * W_NORMAL_ARROW_DAMAGE) {
+                        monster->HP -= factor * W_NORMAL_ARROW_DAMAGE;
                         print_umsg(
                             "Well done! You hit the %s! it's HP is %d now.",
                             monster_name, monster->HP);
@@ -1551,6 +1809,35 @@ void shoot_weapon(Monster *monster, Map *map) {
     }
 }
 
+void treasure_room(Map *map) {
+    clear();
+    for (int i = 0; i < map->room_count; i++) {
+        if (i < map->room_count - 1) {
+            memset(&map->corridors[i], 0, sizeof(Corridor));
+        }
+        memset(&map->rooms[i], 0, sizeof(Room));
+    }
+    map->rooms[4].theme = RT_TREASURE;
+    map->rooms[4].is_reveald = true;
+    map->rooms[4].length = rand() % 2 + 8;
+    map->rooms[4].tlc.x =
+        rand() % (OT_COLS - map->rooms[4].length + 10) + AREA_4_X - 5;
+    map->rooms[4].tlc.y =
+        rand() % (OT_LINES - map->rooms[4].length + 10) + AREA_4_Y - 5;
+    itemize_treasure_room(map, &map->rooms[4]);
+    spawn_player(map->rooms[4]);
+    redraw_screen(map);
+}
+
+bool check_treasure_symbol(Map *map, Room *room) {
+    int x = player.pos.x, y = player.pos.y;
+    if (x == room->treasure_symbol.x && y == room->treasure_symbol.y) {
+        treasure_room(map);
+        return true;
+    }
+    return false;
+}
+
 bool check_monster(Room *room) {
     if (room->monster.type != NO_MONSTER) {
         switch (room->monster.type) {
@@ -1564,9 +1851,14 @@ bool check_monster(Room *room) {
     }
 }
 
-bool check_collision(Point pos, int dir) {
+bool check_collision(Point pos, int dir, bool is_player) {
     int ch;
-    char cantMoveTo[] = "|_ @O";
+    char cantMoveTo[20];
+    if (is_player) {
+        strcpy(cantMoveTo, "|_ @ODFGSU");
+    } else {
+        strcpy(cantMoveTo, "#+|_ @PO");
+    }
     switch (dir) {
     case 'j':
         ch = mvinch(pos.y - 1, pos.x);
@@ -1695,7 +1987,7 @@ bool check_traps(Room *room, bool s_pressed) {
                     !room->traps[i].is_triggered) {
                 print_umsg("Oops! That's a trap. That was close!");
                 room->traps[i].is_triggered = true;
-                return true;
+                return false;
             }
         }
     }
@@ -1774,7 +2066,7 @@ bool check_button(Map *map, Room *room) {
         }
     }
 }
- 
+
 Point *check_secret_doors(Room *room, bool s_pressed) {
     if (!s_pressed) {
         switch (player.dir) {
@@ -1900,10 +2192,8 @@ bool check_items(Room *room) {
                     print_umsg("Sorry! You have already 5 units of food.");
                     break;
                 }
-                print_umsg(
-                    "Yum! You found a delicious meal! Now you have %d foods!",
-                    ++player.food_count);
-                // player.HP += 10;
+                print_umsg("Yum! You found a delicious meal! Enjoy it!");
+                player.food_count++;
                 player.items[player.item_count++] = *item;
                 item->is_taken = true;
                 break;
@@ -1929,9 +2219,10 @@ bool check_items(Room *room) {
                 print_umsg(
                     "You found an Ancient Key! A mysterious energy surrounds "
                     "it... Maybe it can unlock a password door!");
+                item->is_taken = true;
+                item->is_broken = false;
                 player.items[player.item_count++] = *item;
                 player.ancient_key_count++;
-                item->is_taken = true;
                 break;
             }
         }
@@ -2009,12 +2300,17 @@ bool check_weapons(Room *room) {
     }
 }
 
-bool check_staircase(Room *room) {
+bool check_staircase(Map *map, Room *room) {
     int x = player.pos.x, y = player.pos.y;
-
-    if (x == room->staircase.x && y == room->staircase.y) {
-        print_umsg("");
+    if (x == room->staircase.x && y == room->staircase.y &&
+        player.curr_floor == 0) {
+        create_map(&maps[++player.curr_floor]);
+        spawn_player(maps[player.curr_floor].rooms[player.curr_area]);
+        maps[player.curr_floor].rooms[player.curr_area].is_reveald = true;
+        redraw_screen(&maps[player.curr_floor]);
+        return true;
     }
+    return false;
 }
 
 bool use_ancient_key() {
@@ -2045,9 +2341,10 @@ bool use_ancient_key() {
             player.items[bk_index[0]].is_used = true;
             player.items[bk_index[1]].is_used = true;
             return true;
+        } else if (broken_keys_count == 1) {
+            print_lmsg(RED, "Sorry! There is just one broken key!");
+            return false;
         }
-        print_lmsg(RED, "Sorry! There is just one broken key!");
-        return false;
     }
     print_lmsg(RED, "Sorry Dude! There is no Ancient Key!");
     return false;
@@ -2254,7 +2551,16 @@ void food_list() {
                     player.items[use_index].is_used = true;
                 }
                 if (player.food_count >= 0) {
-                    player.feed += 5;
+                    if (player.feed <= FULL_FEED - 5) {
+                        player.feed += 5;
+                    } else {
+                        player.feed = FULL_FEED;
+                    }
+                    if (player.HP <= FULL_HP - 5) {
+                        player.HP += 5;
+                    } else {
+                        player.HP = FULL_HP;
+                    }
                 }
             } else if (ch == 27) {
                 timeout(0);
@@ -2265,8 +2571,10 @@ void food_list() {
     }
 }
 
-void spell_list() {
+int spell_list() {
     WINDOW *lwin = list_window("Spell List");
+
+    int result;
     while (true) {
         int health_spell_count = 0, speed_spell_count = 0,
             damage_spell_count = 0;
@@ -2299,14 +2607,13 @@ void spell_list() {
         int ch = wgetch(lwin);
         if (ch != ERR) {
             if (ch == '1') {
-                if (player.spell_count != 0) {
+                if (player.spell_count > 0) {
                     player.spell_count--;
                 }
                 if (use_index1 != -1) {
                     player.items[use_index1].is_used = true;
-                }
-                if (player.spell_count >= 0) {
-                    use_spells(IT_HEALTH_SPELL);
+                    result = IT_HEALTH_SPELL;
+                    break;
                 }
             }
             if (ch == '2') {
@@ -2315,9 +2622,8 @@ void spell_list() {
                 }
                 if (use_index2 != -1) {
                     player.items[use_index2].is_used = true;
-                }
-                if (player.spell_count >= 0) {
-                    use_spells(IT_SPEED_SPELL);
+                    result = IT_SPEED_SPELL;
+                    break;
                 }
             }
             if (ch == '3') {
@@ -2326,17 +2632,19 @@ void spell_list() {
                 }
                 if (use_index3 != -1) {
                     player.items[use_index3].is_used = true;
-                }
-                if (player.spell_count >= 0) {
-                    use_spells(IT_DAMAGE_SPELL);
+                    result = IT_DAMAGE_SPELL;
+                    break;
                 }
             } else if (ch == 27) {
-                timeout(0);
-                delwin(lwin);
-                return;
+                result = -1;
+                break;
             }
         }
     }
+    timeout(0);
+    delwin(lwin);
+    refresh();
+    return result;
 }
 
 void weapon_list() {
@@ -2488,8 +2796,6 @@ void weapon_list() {
         }
     }
 }
-
-void use_spells(int spell_type) {}
 
 int block_index(Corridor corridor) {
     int x = player.pos.x, y = player.pos.y;
