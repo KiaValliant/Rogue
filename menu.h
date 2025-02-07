@@ -1,12 +1,16 @@
+#include <stdbool.h>
+#include "game.h"
 #ifndef MENU_H
 #define MENU_H
 #define MAX_LEN 100
+#define MAX_SAVES 2
 
 typedef struct
 {
     char username[MAX_LEN];
     char password[MAX_LEN];
     char email[MAX_LEN];
+    GameSave game_save;
 } UserInfo;
 
 void main_menu();
@@ -17,6 +21,7 @@ void login_menu();
 void scoreboard_menu();
 void settings_menu();
 void draw_base_form(int color);
+bool get_input(int y, int x, char *str);
 void print_main_msgs();
 void print_sign_up_msgs();
 void print_sign_in_msgs();

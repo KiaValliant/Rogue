@@ -21,7 +21,9 @@
 #define DEBUG(y, x, fmt, args...)
 #endif
 
+extern UserInfo logged_in_user;
 Player player;
+bool M_mode = false;
 Map maps[MAX_FLOORS];
 chtype wall[2][3] = {{
                          '_' | COLOR_PAIR(ORANGE),
@@ -42,7 +44,7 @@ void start_game() {
     create_map(&maps[player.curr_floor]);
     clear();
     maps[player.curr_floor].rooms[player.curr_area].is_reveald = true;
-    spawn_player(maps[player.curr_floor].rooms[player.curr_area]);
+    spawn_player(&maps[player.curr_floor].rooms[player.curr_area], 0);
     redraw_screen(&maps[player.curr_floor]);
     timeout(-1);
     noecho();
@@ -74,7 +76,12 @@ void handle_input(Map *map) {
     } else if (pressed['A']) {
         save_game_menu(map);
     } else if (pressed['M']) {
-        M_mode_draw(map);
+        if (M_mode) {
+            M_mode = false;
+        } else {
+            M_mode = true;
+        }
+        redraw_screen(map);
     } else if (pressed['R']) {
         spell_use = spell_list();
         if (spell_use == IT_DAMAGE_SPELL) {
@@ -86,6 +93,7 @@ void handle_input(Map *map) {
         food_list();
     } else if (pressed['w']) {
         player.active_weapon.type = NO_WEAPON;
+        draw_player();
     } else if (pressed['i']) {
         weapon_list();
         return;
@@ -134,38 +142,22 @@ void handle_input(Map *map) {
                 }
                 switch (player.dir) {
                 case 'j':
-                    move_monster(&map->rooms[player.curr_area]);
                     player.pos.y -= move_range;
-                    if (monster_attack(map, &map->rooms[player.curr_area],
-                                       G_NORMAL)) {
-                        last_damage_count = 0;
-                    }
+                    move_monster(&map->rooms[player.curr_area]);
                     break;
                 case 'u':
                     player.pos.x++;
                     player.pos.y--;
                     move_monster(&map->rooms[player.curr_area]);
-                    if (monster_attack(map, &map->rooms[player.curr_area],
-                                       G_NORMAL)) {
-                        last_damage_count = 0;
-                    }
                     break;
                 case 'l':
                     player.pos.x += move_range;
                     move_monster(&map->rooms[player.curr_area]);
-                    if (monster_attack(map, &map->rooms[player.curr_area],
-                                       G_NORMAL)) {
-                        last_damage_count = 0;
-                    }
                     break;
                 case 'n':
                     player.pos.x++;
                     player.pos.y++;
                     move_monster(&map->rooms[player.curr_area]);
-                    if (monster_attack(map, &map->rooms[player.curr_area],
-                                       G_NORMAL)) {
-                        last_damage_count = 0;
-                    }
                     break;
                 case 'k':
                     player.pos.y += move_range;
@@ -227,6 +219,9 @@ void handle_input(Map *map) {
                     spell_time_count[IT_DAMAGE_SPELL] = 0;
                 }
             }
+            if (monster_attack(map, &map->rooms[player.curr_area], G_NORMAL)) {
+                last_damage_count = 0;
+            }
             redraw_screen(map);
             if (check_traps(&map->rooms[player.curr_area], pressed['s'])) {
                 last_damage_count = 0;
@@ -247,9 +242,24 @@ void handle_input(Map *map) {
 
 void resume_game() {}
 
+void game_won() {
+    WINDOW *lwin = list_window("!!! YOU WIN !!!");
+    mvwaddwstr(lwin, LIST_FI_Y, LIST_WIDTH / 2 - 5, L"🏆🏆🏆🏆🏆🏆");
+    wrefresh(lwin);
+    sleep(5);
+    delwin(lwin);
+#ifdef _WIN32
+    system("cls");
+#else
+    system("clear");
+    system("reset");
+#endif
+    exit(EXIT_SUCCESS);
+}
+
 void game_over() {
     WINDOW *lwin = list_window("!!! GAME OVER !!!");
-    mvwaddwstr(lwin, 3, LIST_WIDTH / 2 - 5, L"🕱🕱🕱🕱🕱🕱🕱🕱🕱");
+    mvwaddwstr(lwin, LIST_FI_Y, LIST_WIDTH / 2 - 5, L"☠☠☠☠☠☠");
     wrefresh(lwin);
     sleep(5);
     delwin(lwin);
@@ -341,7 +351,7 @@ void create_map(Map *map) {
     if (player.curr_floor == 0) {
         int sc_area;
         do {
-            sc_area = rand() % map->room_count;
+            sc_area = rand() % (map->room_count - 1) + 1;
         } while (sc_area == player.curr_area);
         Item *point = random_point(&map->rooms[sc_area]);
         map->rooms[sc_area].staircase.x = point->pos.x;
@@ -459,10 +469,10 @@ void itemize_regular_room(Map *map, Room *room) {
         int bgold_probabality = rand() % 10;
         if (bgold_probabality == 0) {
             item->type = IT_BGOLD;
-            item->amount = rand() % 11 + 30;
+            item->amount = rand() % 6 + 25;
         } else {
             item->type = IT_GOLD;
-            item->amount = rand() % 11 + 10;
+            item->amount = rand() % 6 + 10;
         }
         item->is_taken = false;
         room->items[room->item_count++] = *item;
@@ -586,7 +596,7 @@ void itemize_enchant_room(Map *map, Room *room) {
 }
 
 void itemize_treasure_room(Map *map, Room *room) {
-    redraw_map(map);
+    redraw_screen(map);
 
     // make traps
     int trap_count = rand() % 3 + 4;
@@ -596,7 +606,7 @@ void itemize_treasure_room(Map *map, Room *room) {
         room->traps[i].y = point->pos.y;
         free(point);
         room->traps[i].is_triggered = false;
-        redraw_map(map);
+        redraw_screen(map);
     }
 
     // make monster
@@ -606,7 +616,7 @@ void itemize_treasure_room(Map *map, Room *room) {
     free(point);
     room->monster.type = MT_UNDEED;
     room->monster.HP = M_UNDEED_HP;
-    redraw_map(map);
+    redraw_screen(map);
 }
 
 Room *generate_room(int area) {
@@ -972,15 +982,19 @@ void init_items() {
     }
 }
 
-void spawn_player(Room room) {
-    init_items();
-    player.HP = FULL_HP;
-    player.feed = FULL_FEED;
-    player.weapons[0].type = WT_MACE;
-    player.active_weapon.type = WT_MACE;
-    int x = room.tlc.x, y = room.tlc.y, length = room.length;
-    player.pos.x = x + length / 2;
-    player.pos.y = y + length / 2;
+void spawn_player(Room *room, int mode) {
+    if (mode == 0) {
+        init_items();
+        player.HP = FULL_HP;
+        player.feed = FULL_FEED;
+        player.weapons[0].type = WT_MACE;
+        player.active_weapon.type = WT_MACE;
+    }
+    int x = room->tlc.x, y = room->tlc.y, length = room->length;
+    Item *point = random_point(room);
+    player.pos.x = point->pos.x;
+    player.pos.y = point->pos.y;
+    free(point);
 }
 
 bool monster_attack(Map *map, Room *room, int game_difficulty) {
@@ -1301,10 +1315,13 @@ void shoot_weapon(Monster *monster, Map *map, bool damage_spell_used) {
                             monster_name, monster->HP);
                     } else {
                         monster->HP = 0;
-                        monster->type = NO_MONSTER;
                         redraw_screen(map);
                         print_umsg("Nailed it! You killed the %s!",
                                    monster_name);
+                        if (monster->type == MT_UNDEED) {
+                            game_won();
+                        }
+                        monster->type = NO_MONSTER;
                     }
                 }
             }
@@ -1343,10 +1360,13 @@ void shoot_weapon(Monster *monster, Map *map, bool damage_spell_used) {
                             monster_name, monster->HP);
                     } else {
                         monster->HP = 0;
-                        monster->type = NO_MONSTER;
                         redraw_screen(map);
                         print_umsg("Nailed it! You killed the %s!",
                                    monster_name);
+                        if (monster->type == MT_UNDEED) {
+                            game_won();
+                        }
+                        monster->type = NO_MONSTER;
                     }
                 }
             }
@@ -1385,10 +1405,13 @@ void shoot_weapon(Monster *monster, Map *map, bool damage_spell_used) {
                             monster_name, monster->HP);
                     } else {
                         monster->HP = 0;
-                        monster->type = NO_MONSTER;
                         redraw_screen(map);
                         print_umsg("Nailed it! You killed the %s!",
                                    monster_name);
+                        if (monster->type == MT_UNDEED) {
+                            game_won();
+                        }
+                        monster->type = NO_MONSTER;
                     }
                 }
             }
@@ -1428,10 +1451,13 @@ void shoot_weapon(Monster *monster, Map *map, bool damage_spell_used) {
                             monster_name, monster->HP);
                     } else {
                         monster->HP = 0;
-                        monster->type = NO_MONSTER;
                         redraw_screen(map);
                         print_umsg("Nailed it! You killed the %s!",
                                    monster_name);
+                        if (monster->type == MT_UNDEED) {
+                            game_won();
+                        }
+                        monster->type = NO_MONSTER;
                     }
                 }
             }
@@ -1476,10 +1502,13 @@ void shoot_weapon(Monster *monster, Map *map, bool damage_spell_used) {
                             monster_name, monster->HP);
                     } else {
                         monster->HP = 0;
-                        monster->type = NO_MONSTER;
                         redraw_screen(map);
                         print_umsg("Nailed it! You killed the %s!",
                                    monster_name);
+                        if (monster->type == MT_UNDEED) {
+                            game_won();
+                        }
+                        monster->type = NO_MONSTER;
                     }
                 }
             }
@@ -1518,10 +1547,13 @@ void shoot_weapon(Monster *monster, Map *map, bool damage_spell_used) {
                             monster_name, monster->HP);
                     } else {
                         monster->HP = 0;
-                        monster->type = NO_MONSTER;
                         redraw_screen(map);
                         print_umsg("Nailed it! You killed the %s!",
                                    monster_name);
+                        if (monster->type == MT_UNDEED) {
+                            game_won();
+                        }
+                        monster->type = NO_MONSTER;
                     }
                 }
             }
@@ -1560,10 +1592,13 @@ void shoot_weapon(Monster *monster, Map *map, bool damage_spell_used) {
                             monster_name, monster->HP);
                     } else {
                         monster->HP = 0;
-                        monster->type = NO_MONSTER;
                         redraw_screen(map);
                         print_umsg("Nailed it! You killed the %s!",
                                    monster_name);
+                        if (monster->type == MT_UNDEED) {
+                            game_won();
+                        }
+                        monster->type = NO_MONSTER;
                     }
                 }
             }
@@ -1603,10 +1638,13 @@ void shoot_weapon(Monster *monster, Map *map, bool damage_spell_used) {
                             monster_name, monster->HP);
                     } else {
                         monster->HP = 0;
-                        monster->type = NO_MONSTER;
                         redraw_screen(map);
                         print_umsg("Nailed it! You killed the %s!",
                                    monster_name);
+                        if (monster->type == MT_UNDEED) {
+                            game_won();
+                        }
+                        monster->type = NO_MONSTER;
                     }
                 }
             }
@@ -1651,10 +1689,13 @@ void shoot_weapon(Monster *monster, Map *map, bool damage_spell_used) {
                             monster_name, monster->HP);
                     } else {
                         monster->HP = 0;
-                        monster->type = NO_MONSTER;
                         redraw_screen(map);
                         print_umsg("Nailed it! You killed the %s!",
                                    monster_name);
+                        if (monster->type == MT_UNDEED) {
+                            game_won();
+                        }
+                        monster->type = NO_MONSTER;
                     }
                 }
             }
@@ -1693,10 +1734,13 @@ void shoot_weapon(Monster *monster, Map *map, bool damage_spell_used) {
                             monster_name, monster->HP);
                     } else {
                         monster->HP = 0;
-                        monster->type = NO_MONSTER;
                         redraw_screen(map);
                         print_umsg("Nailed it! You killed the %s!",
                                    monster_name);
+                        if (monster->type == MT_UNDEED) {
+                            game_won();
+                        }
+                        monster->type = NO_MONSTER;
                     }
                 }
             }
@@ -1735,10 +1779,13 @@ void shoot_weapon(Monster *monster, Map *map, bool damage_spell_used) {
                             monster_name, monster->HP);
                     } else {
                         monster->HP = 0;
-                        monster->type = NO_MONSTER;
                         redraw_screen(map);
                         print_umsg("Nailed it! You killed the %s!",
                                    monster_name);
+                        if (monster->type == MT_UNDEED) {
+                            game_won();
+                        }
+                        monster->type = NO_MONSTER;
                     }
                 }
             }
@@ -1778,10 +1825,13 @@ void shoot_weapon(Monster *monster, Map *map, bool damage_spell_used) {
                             monster_name, monster->HP);
                     } else {
                         monster->HP = 0;
-                        monster->type = NO_MONSTER;
                         redraw_screen(map);
                         print_umsg("Nailed it! You killed the %s!",
                                    monster_name);
+                        if (monster->type == MT_UNDEED) {
+                            game_won();
+                        }
+                        monster->type = NO_MONSTER;
                     }
                 }
             }
@@ -1817,15 +1867,18 @@ void treasure_room(Map *map) {
         }
         memset(&map->rooms[i], 0, sizeof(Room));
     }
+    map->rooms[4].area = 4;
     map->rooms[4].theme = RT_TREASURE;
     map->rooms[4].is_reveald = true;
-    map->rooms[4].length = rand() % 2 + 8;
+    map->rooms[4].length = 8;
     map->rooms[4].tlc.x =
         rand() % (OT_COLS - map->rooms[4].length + 10) + AREA_4_X - 5;
     map->rooms[4].tlc.y =
         rand() % (OT_LINES - map->rooms[4].length + 10) + AREA_4_Y - 5;
+    // M_mode = true;
+    player.curr_area = 4;
     itemize_treasure_room(map, &map->rooms[4]);
-    spawn_player(map->rooms[4]);
+    spawn_player(&map->rooms[4], 1);
     redraw_screen(map);
 }
 
@@ -2305,7 +2358,7 @@ bool check_staircase(Map *map, Room *room) {
     if (x == room->staircase.x && y == room->staircase.y &&
         player.curr_floor == 0) {
         create_map(&maps[++player.curr_floor]);
-        spawn_player(maps[player.curr_floor].rooms[player.curr_area]);
+        spawn_player(&maps[player.curr_floor].rooms[player.curr_area], 1);
         maps[player.curr_floor].rooms[player.curr_area].is_reveald = true;
         redraw_screen(&maps[player.curr_floor]);
         return true;
@@ -2552,12 +2605,12 @@ void food_list() {
                 }
                 if (player.food_count >= 0) {
                     if (player.feed <= FULL_FEED - 5) {
-                        player.feed += 5;
+                        player.feed += 10;
                     } else {
                         player.feed = FULL_FEED;
                     }
                     if (player.HP <= FULL_HP - 5) {
-                        player.HP += 5;
+                        player.HP += 10;
                     } else {
                         player.HP = FULL_HP;
                     }
@@ -2854,20 +2907,27 @@ void redraw_map(Map *map) {
 
 void redraw_screen(Map *map) {
     clear();
-    int count = map->room_count;
-    for (int i = 0; i < MAX_CORRS; i++) {
-        if (map->rooms[i].is_reveald) {
-            if ((i >= 0 && i < map->room_count) &&
-                (i == player.curr_area || i - 1 == player.curr_area ||
-                 i + 1 == player.curr_area)) {
-                draw_room(&map->rooms[i], 1);
+    if (M_mode == false) {
+        int count = map->room_count;
+        for (int i = 0; i < MAX_CORRS; i++) {
+            if (map->rooms[i].is_reveald) {
+                if ((i >= 0 && i < map->room_count) &&
+                    (i == player.curr_area || i - 1 == player.curr_area ||
+                     i + 1 == player.curr_area)) {
+                    draw_room(&map->rooms[i], 1);
+                }
+            }
+            if (map->corridors[i].is_reveald) {
+                if ((i >= 0 && i < map->room_count - 1) &&
+                    (i == player.curr_area || i == player.curr_area - 1)) {
+                    draw_corridor(map->corridors[i], 1);
+                }
             }
         }
-        if (map->corridors[i].is_reveald) {
-            if ((i >= 0 && i < map->room_count - 1) &&
-                (i == player.curr_area || i == player.curr_area - 1)) {
-                draw_corridor(map->corridors[i], 1);
-            }
+    } else {
+        for (int i = 0; i < MAX_CORRS; i++) {
+            draw_room(&map->rooms[i], 1);
+            draw_corridor(map->corridors[i], 0);
         }
     }
     mvprintw(0, 0, "  ");
@@ -2879,6 +2939,30 @@ void draw_player() {
     // draw player's character
     mvprintw(0, 0, " ");
     mvaddch(player.pos.y, player.pos.x, G_PLAYER);
+
+    // print user's name
+    mvprintw(LINES - 1, COLS - 10, "%s", logged_in_user.username);
+
+    // print current weapon
+    switch (player.active_weapon.type) {
+    case WT_MACE:
+        mvaddch(LINES - 1, COLS - 1, W_MACE);
+        break;
+    case WT_DAGGER:
+        mvaddch(LINES - 1, COLS - 1, W_DAGGER);
+        break;
+    case WT_MAGIC_WAND:
+        mvaddch(LINES - 1, COLS - 1, W_MAGIC_WAND);
+        break;
+    case WT_NORMAL_ARROW:
+        mvaddch(LINES - 1, COLS - 1, W_NORMAL_ARROW);
+        break;
+    case WT_SWORD:
+        mvaddch(LINES - 1, COLS - 1, W_SWORD);
+        break;
+    default:
+        break;
+    };
 
     // draw player's HP
     attron(COLOR_PAIR(BLUE));
@@ -3008,7 +3092,8 @@ bool save_game_menu(Map *map) {
         }
     }
     GameSave game;
-    game.map = *map;
+    game.maps[0] = maps[0];
+    game.maps[1] = maps[1];
     game.player = player;
     strcpy(game.save_title, save_title);
     save_game(&game);
@@ -3016,9 +3101,8 @@ bool save_game_menu(Map *map) {
 }
 
 void save_game(GameSave *gameSave) {
-    FILE *file = fopen("gameinfo.bin", "wb");
+    FILE *file = fopen("gameinfo.bin", "ab");
     if (!file) {
-        perror("Failed to open file for writing");
         return;
     }
 

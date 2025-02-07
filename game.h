@@ -1,6 +1,7 @@
-#include "mainh.h"
 #include <ncurses.h>
 #include <stdbool.h>
+#include "mainh.h"
+// #include "menu.h"
 #ifndef GAME_H
 #define GAME_H
 
@@ -130,7 +131,7 @@
 #define M_UNDEED_HP 30
 #define G_EASY 0
 #define G_NORMAL 1
-#define G_HARD 2 
+#define G_HARD 2
 #define M_DEAMON_DAMAGE_EASY 1
 #define M_FIRE_BREATHING_DAMAGE_EASY 2
 #define M_GIANT_DAMAGE_EASY 5
@@ -163,103 +164,106 @@ struct Room;
 struct Corridor;
 struct Map;
 
+
 typedef struct Point {
-  int x, y;
-  int door_type;
-  bool is_triggered, // this is for traps
-      is_pressed,    // this is for generate password button
-      is_door,       // this is for corridors
-      is_reveald;    // this is for corridor blocks
+    int x, y;
+    int door_type;
+    bool is_triggered, // this is for traps
+        is_pressed,    // this is for generate password button
+        is_door,       // this is for corridors
+        is_reveald;    // this is for corridor blocks
 } Point;
 
 typedef struct Monster {
-  int type;
-  Point pos;
-  int dir;
-  int HP;
-  int area;
+    int type;
+    Point pos;
+    int dir;
+    int HP;
+    int area;
 } Monster;
 
 typedef struct Item {
-  int type;
-  Point pos;  // for room
-  int amount; // for player
-  bool is_taken;
-  bool is_broken; // for Ancient Key
-  bool is_used;   // for Ancient Key
+    int type;
+    Point pos;  // for room
+    int amount; // for player
+    bool is_taken;
+    bool is_broken; // for Ancient Key
+    bool is_used;   // for Ancient Key
 } Item;
 
 typedef struct Weapon {
-  int type;
-  Point pos;
-  int collect_amount;
-  bool is_taken;
-  bool is_used;
+    int type;
+    Point pos;
+    int collect_amount;
+    bool is_taken;
+    bool is_used;
 } Weapon;
 
 typedef struct Player {
-  Point pos;
-  int dir;
-  int HP;
-  int feed;
-  int gold_count, food_count, spell_count, ancient_key_count;
-  Item items[MAX_ITEMS];
-  int item_count;
-  Weapon weapons[MAX_WEAPONS];
-  int weapon_count;
-  Weapon active_weapon;
-  int curr_area;
-  int curr_floor;
+    Point pos;
+    int dir;
+    int HP;
+    int feed;
+    int gold_count, food_count, spell_count, ancient_key_count;
+    Item items[MAX_ITEMS];
+    int item_count;
+    Weapon weapons[MAX_WEAPONS];
+    int weapon_count;
+    Weapon active_weapon;
+    int curr_area;
+    int curr_floor;
 } Player;
 
 typedef struct Room {
-  int theme;
-  int area;
-  Point tlc;
-  int length;
-  Point doors[MAX_DOORS];
-  int door_count;
-  Point traps[MAX_TRAPS];
-  int trap_count;
-  Point button;
-  Point pillar;
-  Point window;
-  Point staircase;
-  Point treasure_symbol;
-  Item items[MAX_ITEMS];
-  int item_count;
-  Weapon weapons[MAX_WEAPONS];
-  int weapon_count;
-  bool is_reveald;
-  char password[PASSWORD_SIZE];
-  Monster monster;
+    int theme;
+    int area;
+    Point tlc;
+    int length;
+    Point doors[MAX_DOORS];
+    int door_count;
+    Point traps[MAX_TRAPS];
+    int trap_count;
+    Point button;
+    Point pillar;
+    Point window;
+    Point staircase;
+    Point treasure_symbol;
+    Item items[MAX_ITEMS];
+    int item_count;
+    Weapon weapons[MAX_WEAPONS];
+    int weapon_count;
+    bool is_reveald;
+    char password[PASSWORD_SIZE];
+    Monster monster;
 } Room;
 
 typedef struct Corridor {
-  Point blocks[MAX_MAPS_LEN * MAX_MAPS_LEN];
-  int block_count;
-  bool is_reveald;
+    Point blocks[MAX_MAPS_LEN * MAX_MAPS_LEN];
+    int block_count;
+    bool is_reveald;
 } Corridor;
 
 typedef struct Map {
-  Room rooms[MAX_ROOMS];
-  int room_count;
-  Corridor corridors[MAX_CORRS];
+    Room rooms[MAX_ROOMS];
+    int room_count;
+    Corridor corridors[MAX_CORRS];
 } Map;
 
 typedef struct GamePthread {
-  Player *player;
-  Map *map;
+    Player *player;
+    Map *map;
 } GamePthread;
 
 typedef struct GameSave {
-  Player player;
-  Map map;
-  char save_title[MAX_TITLE_LEN];
+    Player player;
+    Map maps[MAX_FLOORS];
+    char save_title[MAX_TITLE_LEN];
 } GameSave;
+
 
 void start_game();
 void resume_game();
+void game_won();
 void game_over();
 void create_map(Map *map);
 void redraw_map(Map *map);
@@ -307,7 +311,7 @@ int block_index(Corridor corridor);
 void reveal_blocks(Corridor *corridor, int index);
 void draw_room(Room *room, int mode);
 void draw_corridor(Corridor corridor, int mode);
-void spawn_player();
+void spawn_player(Room *room, int mode);
 void init_items();
 void debug_window(int y, int x, const char *title, int count, ...);
 bool save_game_menu(Map *map);

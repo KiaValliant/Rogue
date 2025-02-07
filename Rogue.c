@@ -8,7 +8,7 @@
 
 int main()
 {
-    // main_menu();
+    main_menu();
     start_game();
     return 0;
 }
